@@ -1,5 +1,5 @@
-#! /usr/bin/env python
-# Copyright (C) 2014-2015 Hewlett-Packard Development Company, L.P.
+#!/usr/bin/env python
+# Copyright (C) 2015 Hewlett-Packard Development Company, L.P.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,12 +14,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from setuptools import setup
-setup(
-    name='aaautilspamcfg',
-    version='1.0',
-    py_modules=['aaautilspamcfg', 'autoprovision', 'userauth'],
-    entry_points={
-        'console_scripts': ['aaautilspamcfg = aaautilspamcfg:main', 'autoprovision = autoprovision:main']
-    }
-)
+import tornado.web
+
+def is_user_authenticated(param):
+    if not param.get_secure_cookie("user"):
+        return False
+    else:
+        return True
