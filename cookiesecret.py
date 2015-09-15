@@ -28,18 +28,19 @@ import os
 #              256.
 # =======================================================
 
+
 def generate_cookie_secret():
-   SECURE_COOKIE_LEN = 256/8
-   FILE = "/var/run/persistant_cookie_secret"
-   if os.path.isfile(FILE):
-       with open(FILE,'r') as file:
-           string2 = file.read()
-   else:
-       string1 = os.urandom(SECURE_COOKIE_LEN)
-       OpenSSL.rand.seed(string1)
-       string2 = OpenSSL.rand.bytes(SECURE_COOKIE_LEN)
-       file = open(FILE, 'w+')
-       file.write(string2)
-       file.close()
-       os.chmod(FILE,0600)
-   return string2
+    SECURE_COOKIE_LEN = 256/8
+    FILE = "/var/run/persistant_cookie_secret"
+    if os.path.isfile(FILE):
+        with open(FILE, 'r') as file:
+            string2 = file.read()
+    else:
+        string1 = os.urandom(SECURE_COOKIE_LEN)
+        OpenSSL.rand.seed(string1)
+        string2 = OpenSSL.rand.bytes(SECURE_COOKIE_LEN)
+        file = open(FILE, 'w+')
+        file.write(string2)
+        file.close()
+        os.chmod(FILE, 0600)
+    return string2
