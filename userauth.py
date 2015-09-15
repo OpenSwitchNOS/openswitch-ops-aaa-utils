@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (C) 2015 Hewlett-Packard Development Company, L.P.
+#  Copyright (C) 2015 Hewlett Packard Enterprise Development LP.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -24,6 +24,7 @@ val = ''
 # Description: Provides API's to REST user authentication
 # =======================================================
 
+
 def is_user_authenticated(request):
     '''
     The request argument is an instance of class tornado.web.RequestHandler.
@@ -35,6 +36,7 @@ def is_user_authenticated(request):
         return False
     else:
         return True
+
 
 def _pam_conv(auth, query_list, userData):
     '''
@@ -63,12 +65,15 @@ def _pam_conv(auth, query_list, userData):
 # ......
 # =============================================
 
+
 def handle_user_login(request):
     '''
     The request argument is an instance of class tornado.web.RequestHandler.
-    This function authenticates the username and password contained in the request.
+    This function authenticates the username and password contained in the
+    request.
     The request is expected to contain values for "username" and "password".
-    This function returns True if the authentication succeeds else returns False
+    This function returns True if the authentication succeeds else returns
+    False.
     '''
     global val
 

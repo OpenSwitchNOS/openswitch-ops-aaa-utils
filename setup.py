@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-# Copyright (C) 2014-2015 Hewlett-Packard Development Company, L.P.
+#  Copyright (C) 2015 Hewlett Packard Enterprise Development LP.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -20,6 +20,7 @@ setup(
     version='1.0',
     py_modules=['aaautilspamcfg', 'autoprovision', 'userauth', 'cookiesecret'],
     entry_points={
-        'console_scripts': ['aaautilspamcfg = aaautilspamcfg:main', 'autoprovision = autoprovision:main']
+        'console_scripts': ['aaautilspamcfg = aaautilspamcfg:main',
+                            'autoprovision = autoprovision:main']
     }
 )
