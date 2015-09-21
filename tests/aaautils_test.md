@@ -9,8 +9,6 @@ to do by using the imperative mood, for example, Press Enter to view the next sc
 Component Test Cases
 ============
 
-<!--Provide the name of the grouping of commands, for example, LLDP commands-->
-
 1. Daemon testing.
 2. User configuration testing.
 
