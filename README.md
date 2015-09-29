@@ -30,3 +30,21 @@ For the high level design of ops-aaa-utils, refer to [DESIGN.md](DESIGN.md)
 For the current list of contributors and maintainers, refer to [AUTHORS.md](AUTHORS.md)
 
 For general information about OpenSwitch project refer to http://www.openswitch.net
+
+# AUTOPROVISIONING
+
+## What is autoprovisioning?
+Autoprovisioning is a module that is responsible for the initial provisioning of the switch in the [OpenSwitch](http://www.openswitch.net) project.
+
+## What is the structure of the repository?
+* All the source code and scripts for autoprovisioning is currently present in the ops-aaa-utils repository.
+
+* The src/aaa-utils/tests/ repository contains all the component tests for ops-autoprovision based on the [ops-test-framework](http://git.openswitch.net/openswitch/ops-test-framework).
+
+## What is the license?
+Being heavily based on the project bar, ops-autoprovision inherits its Apache 2.0 license. For more details refer to COPYING.
+
+## What other documents are available?
+For the high level design of autoprovision, refer to [autoprovision_DESIGN.md-TBL](DESIGN.md)
+
+For general information about OpenSwitch project refer to http://www.openswitch.net
