@@ -14,8 +14,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from smart import Error, _
-from smart.util import pexpect
+import pexpect
 
 from time import sleep
 import pytest
