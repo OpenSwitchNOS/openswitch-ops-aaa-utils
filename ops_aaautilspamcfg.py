@@ -79,6 +79,10 @@ SSH_PASSKEY_AUTHENTICATION = "ssh_passkeyauthentication"
 SSH_PUBLICKEY_AUTHENTICATION = "ssh_publickeyauthentication"
 AUTH_KEY_ENABLE = "enable"
 
+SFTP_SERVER_CONFIG = "sftp_server_status"
+SFTP_SERVER_ENABLE = "enable"
+SFTP_SERVER_DISABLE = "disable"
+
 PERFORMED = "performed"
 URL = "url"
 
@@ -143,6 +147,8 @@ def default_sshd_config():
                               "PubkeyAuthentication no")
     newdata = newdata.replace("#PasswordAuthentication no",
                               "PasswordAuthentication no")
+    newdata = newdata.replace("Subsystem	sftp	/usr/lib/openssh/sftp-server",
+                              "#Subsystem	sftp	/usr/lib/openssh/sftp-server")
 
     with open(SSHD_CONFIG, 'w') as fd:
         fd.write(newdata)
@@ -165,6 +171,7 @@ def add_default_row():
     data[AAA_RADIUS] = OPS_FALSE
     data[SSH_PASSKEY_AUTHENTICATION] = AUTH_KEY_ENABLE
     data[SSH_PUBLICKEY_AUTHENTICATION] = AUTH_KEY_ENABLE
+    data[SFTP_SERVER_CONFIG] = SFTP_SERVER_DISABLE
 
     # Default values for auto provisioning status column
     auto_provisioning_data[PERFORMED] = "False"
@@ -249,6 +256,7 @@ def update_ssh_config_file():
     '''
     passkey = "no"
     publickey = "no"
+    sftpstatus = False
 
     for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
         if ovs_rec.aaa:
@@ -259,6 +267,9 @@ def update_ssh_config_file():
                 elif key == SSH_PUBLICKEY_AUTHENTICATION:
                     if value == AUTH_KEY_ENABLE:
                         publickey = "yes"
+		elif key == SFTP_SERVER_CONFIG:
+		    if value == SFTP_SERVER_ENABLE:
+			sftpstatus = True
 
     # Add default values if not present, later change to values present in DB
     default_sshd_config()
@@ -275,6 +286,14 @@ def update_ssh_config_file():
              in line or "PasswordAuthentication no" in line:
             del contents[index]
             contents.insert(index, "PasswordAuthentication " + passkey + "\n")
+        elif "Subsystem	sftp	/usr/lib/openssh/sftp-server" in line \
+           or "#Subsystem	sftp	/usr/lib/openssh/sftp-server" in line:
+              if sftpstatus == True:
+                 del contents[index]
+                 contents.insert(index, "Subsystem	sftp	/usr/lib/openssh/sftp-server"+ "\n")
+              else:
+                 del contents[index]
+                 contents.insert(index, "#Subsystem	sftp	/usr/lib/openssh/sftp-server"+ "\n")
 
     with open(SSHD_CONFIG, "w") as f:
         contents = "".join(contents)
