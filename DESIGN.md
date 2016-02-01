@@ -114,6 +114,47 @@ The internal structure is implemented using python. The file autoprovision.py is
 - Executes the script
 - Updates the autoprovision status to the OVSDB table System, column auto_provisioning_status.
 
+# High level design of CHAP backend for PAM to Radius
+
+## Feature description
+Enable CHAP-Password encoding for user passwords when Pluggable Authentication Module (PAM) communicates with Radius Server for user authentication.
+
+## Responsibilities
+* Enable switch administrator to specify PAM to Radius password encoding type as PAP or CHAP.
+* Store the specified encoding type in OVSDB and configure PAM to enforce Radius password encoding type.
+* Encode User password to the specified type when PAM communicates to Radius for user authentication.
+
+## Design choices
+ The choice was either to create a bridge between PAM and an existing Radius client or to stay within the established PAM framework and highly leverage an existing PAM module. Latter was choosen for efficiency and architectural fit. Major pieces of the design are:
+ - create a PAM service module (ops_chap_auth.so) within the PAM framework that will encode the password into a CHAP-Password.
+ - Add a CLI to specify PAM to Radius password encoding type and save it to Open.
+ - enhance the aaautilspamcfg module to apply the PAM to Radius authentication type to configuration files.
+
+## Relationships to external OpenSwitch entities
+
+      +---------------------------+          +---------------------------+
+      |    ops_chap_auth          | <------> |           PAM             |
+      +---------------------------+          +---------------------------+
+
+## OVSDB-Schema
+This feature adds a key value pair to the aaa column of the OVSDB SYSTEM TABLE. The Key is RADIUS_AUTH with valid values being RADIUS_CHAP and RADIUS_PAP.
+
+##PAM service module
+ This module will provide the PAM Authentication service (Auth Group), other services can continue to be provided by existing modules. PAM requires implementation of two interfaces for the Auth Group, the pam_sm_authenticate() and pam_sm_setcred().
+
+For pam_sm_authenticate(), the module will construct a CHAP response from the user supplied password and utilize the CHAP-Password attribute to communicate the CHAP response to the Radius server through an Access-Request as specified in RFC 2865 section 2.2. The CHAP random challenge will be placed in the Request Authenticator field of the Access-Request packet.
+The behavior of the interface pam_sm_setcred() in this new module will be same as the behavior provided by the pam_radius_auth module currently in use. Specifically, pam_sm_setcred() will return a value matching the latest return value of pam_sm_authenticate().
+
+## CLI
+ A CLI will enable setting PAM <--> Radius authentication type.
+ The proposed syntax of this command is:
+"aaa authentication login radius radius-auth ( pap | chap)"
+The radius-auth type set through this command will be stored as a key value pair in the SYSTEM TABLE.
+
+## Configuration:
+Currently aaautilspamcfg module configures radius configuration files such that pam_radius_auth is used for authentication services. aautilspamcfg will be enhanced to use pam_radius_auth or the new module depending on radius-auth type specified in the OPEN_VSWITCH_TABLE.
+
 ## References
 For the AAA Command Reference document, refer to [CLI](/documents/user/AAA_cli)
 For the Autoprovision Command Reference document, refer to [Autoprovision Command Reference](/documents/user/autoprovision_CLI)
+For PAM, refer to http://www.linuxjournal.com/article/2120
