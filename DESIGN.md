@@ -14,6 +14,7 @@ Responsibilities
 
 - The `pam_radius_chap_auth` is a PAM module that provides PAM Authentication service (Auth Group) when PAM to RADIUS user password encoding is set to CHAP. It implements `pam_sm_authenticate()` and `pam_sm_setcred()` interfaces.
 
+
 Design choices
 --------------
 The design choices made for `ops-aaa-utils` modules are:
