@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (C) 2015 Hewlett Packard Enterprise Development LP
+# Copyright (C) 2015-2016 Hewlett Packard Enterprise Development LP
 # All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -31,7 +31,7 @@ import os
 
 def generate_cookie_secret():
     SECURE_COOKIE_LEN = 256/8
-    FILE = "/var/run/persistant_cookie_secret"
+    FILE = "/var/run/aaa/persistant_cookie_secret"
     if os.path.isfile(FILE):
         with open(FILE, 'r') as file:
             string2 = file.read()
