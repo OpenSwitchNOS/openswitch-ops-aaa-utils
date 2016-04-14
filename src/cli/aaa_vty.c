@@ -344,9 +344,11 @@ aaa_show_aaa_authenctication()
 /* CLI to show authentication mechanism configured in DB. */
 DEFUN(cli_aaa_show_aaa_authenctication,
         aaa_show_aaa_authenctication_cmd,
-        "show aaa authentication",
+        "show aaa authentication login",
         SHOW_STR
-        "Show authentication options\n" "Show aaa authentication information\n")
+        "Show authentication options\n"
+        "Show aaa authentication information\n"
+        "Show login information\n")
 {
     return aaa_show_aaa_authenctication();
 }
