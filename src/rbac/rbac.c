@@ -113,6 +113,20 @@ get_rbac_role(const char *username, rbac_role_t *role)
       }
    }
 
+   /*
+    * Finally check for readonly role.
+    */
+   for (i = 0; i < ngroups; i++)
+   {
+      g = getgrgid(groups[i]);
+      if (strncmp(g->gr_name, RBAC_ROLE_READONLY, RBAC_MAX_ROLE_NAME_LEN) == 0)
+      {
+         strncpy(role->name, RBAC_ROLE_READONLY, sizeof (rbac_role_t));
+         free(groups);
+         return(true);
+      }
+   }
+
    strncpy(role->name, RBAC_ROLE_NONE, RBAC_MAX_ROLE_NAME_LEN);
    free(groups);
    return(true);
@@ -165,6 +179,12 @@ get_rbac_permissions(const char *username, rbac_permissions_t *permissions)
       return(true);
    }
 
+   if (strncmp(role.name, RBAC_ROLE_READONLY, RBAC_MAX_ROLE_NAME_LEN) == 0)
+   {
+      permissions->count = 1;
+      strcpy(permissions->name[0], RBAC_READ_SWITCH_CONFIG);
+      return(true);
+   }
    permissions->count = 0;
    return(true);
 

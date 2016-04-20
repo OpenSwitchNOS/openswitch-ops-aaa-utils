@@ -28,6 +28,7 @@ import os
 ROLE_ROOT = "root"
 ROLE_ADMIN = "ops_admin"
 ROLE_NETOP = "ops_netop"
+ROLE_READONLY = "readonly"
 ROLE_NONE = "none"
 
 #
@@ -43,6 +44,7 @@ SYS_MGMT = "SYS_MGMT"
 ROLE_ROOT_PERMISSIONS = [SYS_MGMT, READ_SWITCH_CONFIG, WRITE_SWITCH_CONFIG]
 ROLE_ADMIN_PERMISSIONS = [SYS_MGMT]
 ROLE_NETOP_PERMISSIONS = [READ_SWITCH_CONFIG, WRITE_SWITCH_CONFIG]
+ROLE_READONLY_PERMISSIONS = [READ_SWITCH_CONFIG]
 ROLE_NONE_PERMISSIONS = []
 
 
@@ -77,6 +79,8 @@ def get_permissions(role):
         return ROLE_ADMIN_PERMISSIONS
     if ROLE_NETOP in role:
         return ROLE_NETOP_PERMISSIONS
+    if ROLE_READONLY in role:
+        return ROLE_READONLY_PERMISSIONS
     return ROLE_NONE_PERMISSIONS
 
 
@@ -90,6 +94,8 @@ def get_role(groups):
         return ROLE_ADMIN
     if ROLE_NETOP in groups:
         return ROLE_NETOP
+    if ROLE_READONLY in groups:
+        return ROLE_READONLY
     return ROLE_NONE
 
 
