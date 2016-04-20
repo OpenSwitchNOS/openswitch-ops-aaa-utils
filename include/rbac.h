@@ -30,6 +30,7 @@
 #define RBAC_ROLE_ROOT                          "root"
 #define RBAC_ROLE_ADMIN                         "ops_admin"
 #define RBAC_ROLE_NETOP                         "ops_netop"
+#define RBAC_ROLE_READONLY                      "readonly"
 #define RBAC_ROLE_NONE                          "none"
 
 #define RBAC_READ_SWITCH_CONFIG                 "READ_SWITCH_CONFIG"
