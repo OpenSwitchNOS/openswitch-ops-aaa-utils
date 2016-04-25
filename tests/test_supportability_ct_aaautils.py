@@ -15,6 +15,7 @@
 #    under the License.
 #
 
+import pytest
 from opstestfw import testEnviron, LogOutput
 
 topoDict = {"topoExecution": 120,
@@ -82,6 +83,7 @@ def checkAAADaemonDiag(dut01Obj, daemon, feature):
             return True
 
 
+@pytest.mark.skipif(True, reason="Skipping due to Taiga ID : 864")
 class Test_diag_dump:
 
     def setup_class(cls):
