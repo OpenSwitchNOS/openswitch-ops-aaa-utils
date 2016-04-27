@@ -32,7 +32,6 @@
 /*
  * Local functions to support the public API.
 
-
  */
 bool
 get_rbac_role(const char *username, rbac_role_t *role)
