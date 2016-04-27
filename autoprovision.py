@@ -34,7 +34,7 @@ CFGDB_SCHEMA = '/usr/share/openvswitch/configdb.ovsschema'
 OVS_SCHEMA = '/usr/share/openvswitch/vswitch.ovsschema'
 
 type_startup_config = "startup"
-
+# comment
 SYSTEM_TABLE = "System"
 OPS_TRUE = "True"
 PERFORMED = "performed"
