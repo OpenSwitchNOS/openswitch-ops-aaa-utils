@@ -44,10 +44,11 @@ def get_request_user(request):
     '''
     The request argument is an instance of class tornado.web.RequestHandler.
     Function determines the authenticated user using the cookie contained
-    in the request.
+    in the request. Set max_age_days to 0.1 as oldest cookie that server
+    will accept, which is approximately 2 hour 24 minutes.
     Returns the authenticated user or None is not authenticated
     '''
-    return request.get_secure_cookie("user")
+    return request.get_secure_cookie("user", max_age_days=0.1)
 
 
 def _pam_conv(auth, query_list, userData):
@@ -92,6 +93,8 @@ def handle_user_login(request):
     This function authenticates the username and password contained in the
     request.
     The request is expected to contain values for "username" and "password".
+    In addition, set expires_days to 0.07 to instruct browser discard cookie
+    after approximately 1 hour 40 minutes.
     This function returns True if the authentication succeeds else returns
     False.
     '''
@@ -109,5 +112,5 @@ def handle_user_login(request):
     except:
         return False
     else:
-        request.set_secure_cookie("user", request.get_argument("username"))
+        request.set_secure_cookie("user", request.get_argument("username"), expires_days=0.07)
         return True
