@@ -47,7 +47,7 @@ def get_request_user(request):
     in the request.
     Returns the authenticated user or None is not authenticated
     '''
-    return request.get_secure_cookie("user")
+    return request.get_secure_cookie("user", max_age_days=0.2)
 
 
 def _pam_conv(auth, query_list, userData):
@@ -109,5 +109,5 @@ def handle_user_login(request):
     except:
         return False
     else:
-        request.set_secure_cookie("user", request.get_argument("username"))
+        request.set_secure_cookie("user", request.get_argument("username"), expires_days=0.1)
         return True
