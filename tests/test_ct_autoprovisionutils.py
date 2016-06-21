@@ -164,6 +164,8 @@ class autoprovisionFeatureTest(OpsVsiTest):
             info("### Passed:Executing autoprovision script again,"
                  "autoprovision not performed  ###\n")
 
+@pytest.mark.skipif(True, reason="Disabling because modular framework tests "
+                                 "were enable")
 class Test_autoprovisionfeature:
     def setup(self):
         pass
