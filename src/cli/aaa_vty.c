@@ -1167,6 +1167,123 @@ DEFUN(cli_show_radius_server,
     return show_radius_server_info();
 }
 
+/*================================================================================================*/
+/* TACACS+ server name validation functions */
+static const bool
+tacacs_server_name_has_all_digits(const char *server_name)
+{
+    while (*server_name) {
+           if (!ispunct(*server_name) && !isdigit(*server_name)) {
+               return false;
+           }
+           server_name++;
+    }
+    return true;
+}
+
+static const bool
+is_valid_ipv4_address(const char *server_ipv4_address)
+{
+    struct sockaddr_in sa;
+
+    int result = inet_pton(AF_INET, server_ipv4_address, &(sa.sin_addr));
+
+    if (result <= 0)
+       return false;
+
+    /* 0.0.0.0 - 0.255.255.255 are not valid host addresses */
+    if (*server_ipv4_address == '0')
+       return false;
+
+    if(!IS_VALID_IPV4(htonl(sa.sin_addr.s_addr)))
+        return false;
+
+    return true;
+}
+
+static const bool
+tacacs_is_valid_server_name(const char *server_name)
+{
+    if(!server_name) {
+       return false;
+    }
+
+    if (tacacs_server_name_has_all_digits(server_name)) {
+        return is_valid_ipv4_address(server_name);
+    }
+
+    return true;
+}
+
+const int
+tacacs_server_sanitize_parameters(tacacs_server_params_t *server_params)
+{
+    /* Check the validity of server name */
+    if (!tacacs_is_valid_server_name(server_params->server_name)) {
+        vty_out(vty, "Invalid server name %s", VTY_NEWLINE);
+        return CMD_ERR_NOTHING_TODO;
+    }
+
+    return CMD_SUCCESS;
+}
+
+
+/* Adding tacacs server host.
+ */
+static int
+tacacs_server_add_host(tacacs_server_params_t *server_params)
+{
+    struct ovsdb_idl_txn *tacacs_server_txn = NULL;
+    struct ovsrec_tacacs_server *tacacs_server_row = NULL;
+
+    int retval = tacacs_server_sanitize_parameters(server_params);
+    if (CMD_SUCCESS != retval) {
+        return retval;
+    }
+
+    /* Start of transaction */
+    START_DB_TXN(tacacs_server_txn);
+
+    // TODO (kshridha) - Check if server already exists and max server
+    // validations
+
+    fprintf (stdout, "Inserting a row into the TACACS Server Table\n");
+    VLOG_DBG("Inserting a row into the TACACS Server Table\n");
+
+    tacacs_server_row = ovsrec_tacacs_server_insert(tacacs_server_txn);
+    if (NULL == tacacs_server_row) {
+        fprintf (stdout, "Could not insert a row into the TACACS Server Table\n");
+        VLOG_ERR("Could not insert a row into the TACACS Server Table\n");
+        ERRONEOUS_DB_TXN(tacacs_server_txn, "Could not insert a row into the TACACS Server Table");
+    } else {
+        fprintf (stdout, "Inserted a row\n");
+        VLOG_DBG("Inserted a row into the TACACS Server Table successfully\n");
+        ovsrec_tacacs_server_set_ip_address(tacacs_server_row, server_params->server_name);
+
+    }
+
+    /* End of transaction. */
+    END_DB_TXN(tacacs_server_txn);
+
+    return CMD_SUCCESS;
+}
+
+
+
+/* CLI to add tacacs host */
+DEFUN (cli_tacacs_server_add_host,
+       tacacs_server_add_host_cmd,
+       "tacacs-server host WORD",
+       "Tacacs+ server configuration\n"
+       "Host IP address or hostname\n"
+       "Tacacs+ server IP address or hostname\n")
+{
+    tacacs_server_params_t tacacs_server_params;
+    tacacs_server_params.server_name = (char *)argv[0];
+
+    return tacacs_server_add_host(&tacacs_server_params);
+}
+
 /* Shows auto provisioning status.*/
 static int
 show_auto_provisioning()
@@ -1265,9 +1382,9 @@ static int
 set_ssh_publickey_auth(const char *status)
 {
     const struct ovsrec_system *row = NULL;
-    enum ovsdb_idl_txn_status txn_status;
     struct ovsdb_idl_txn *status_txn = cli_do_config_start();
     struct smap smap_aaa;
+    enum ovsdb_idl_txn_status txn_status;
 
     if (status_txn == NULL)
     {
@@ -1429,6 +1546,9 @@ aaa_ovsdb_init(void)
     ovsdb_idl_add_column(idl, &ovsrec_radius_server_col_passkey);
     ovsdb_idl_add_column(idl, &ovsrec_radius_server_col_priority);
 
+    /* Add tacacs-server columns. */
+    ovsdb_idl_add_column(idl, &ovsrec_tacacs_server_col_ip_address);
+
     return;
 }
 
@@ -1461,6 +1581,8 @@ cli_post_init(void)
     install_element(CONFIG_NODE, &radius_server_configure_timeout_cmd);
     install_element(CONFIG_NODE, &radius_server_set_auth_port_cmd);
     install_element(ENABLE_NODE, &show_radius_server_cmd);
+    install_element(CONFIG_NODE, &tacacs_server_add_host_cmd);
+   // install_element(CONFIG_NODE, &tacacs_server_remove_host_cmd);
     install_element(ENABLE_NODE, &show_auto_provisioning_cmd);
     install_element(ENABLE_NODE, &show_ssh_auth_method_cmd);
     install_element(CONFIG_NODE, &set_ssh_publickey_auth_cmd);
