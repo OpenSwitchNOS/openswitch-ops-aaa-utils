@@ -1160,12 +1160,63 @@ show_radius_server_info()
     return CMD_SUCCESS;
 }
 
+/* Adding tacacs server host.
+ */
+static int
+tacacs_server_add_host(char *s)
+{
+    struct ovsrec_tacacs_server *row = NULL;
+    struct ovsdb_idl_txn *status_txn = NULL;
+    enum ovsdb_idl_txn_status txn_status;
+
+    status_txn = cli_do_config_start();
+    fprintf (stdout, "Txn started\n");
+
+    if (status_txn == NULL)
+    {
+        VLOG_ERR(OVSDB_TXN_CREATE_ERROR);
+        cli_do_config_abort(status_txn);
+        return CMD_OVSDB_FAILURE;
+    }
+
+    row = ovsrec_tacacs_server_insert(status_txn);
+    if (row != NULL) fprintf(stdout, "Row inserted");
+
+    ovsrec_tacacs_server_set_ip_address(row, "IP");
+    ovsrec_tacacs_server_set_passkey(row, "Key");
+
+    txn_status = cli_do_config_finish(status_txn);
+
+    if (txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED)
+    {
+        fprintf(stdout, "Txn finished fine\n");
+        return CMD_SUCCESS;
+    }
+    else
+    {
+        VLOG_ERR(OVSDB_TXN_COMMIT_ERROR);
+        return CMD_OVSDB_FAILURE;
+    }
+}
+
 DEFUN(cli_show_radius_server,
         show_radius_server_cmd,
         "show radius-server", SHOW_STR "Show radius server configuration\n")
 {
     return show_radius_server_info();
 }
+
+/* CLI to add tacacs host */
+DEFUN (cli_tacacs_server_add_host,
+       tacacs_server_add_host_cmd,
+       "tacacs-server host WORD",
+       "Tacacs+ server configuration\n"
+       "Host IP address or hostname\n"
+       "Tacacs+ server IP address or hostname\n")
+{
+    return tacacs_server_add_host("hello");
+}
+
 
 /* Shows auto provisioning status.*/
 static int
@@ -1429,6 +1480,8 @@ aaa_ovsdb_init(void)
     ovsdb_idl_add_column(idl, &ovsrec_radius_server_col_passkey);
     ovsdb_idl_add_column(idl, &ovsrec_radius_server_col_priority);
 
+    ovsdb_idl_add_table(idl, &ovsrec_table_tacacs_server);
+    ovsdb_idl_add_column(idl, &ovsrec_tacacs_server_col_ip_address);
     return;
 }
 
@@ -1461,6 +1514,7 @@ cli_post_init(void)
     install_element(CONFIG_NODE, &radius_server_configure_timeout_cmd);
     install_element(CONFIG_NODE, &radius_server_set_auth_port_cmd);
     install_element(ENABLE_NODE, &show_radius_server_cmd);
+    install_element(CONFIG_NODE, &tacacs_server_add_host_cmd);
     install_element(ENABLE_NODE, &show_auto_provisioning_cmd);
     install_element(ENABLE_NODE, &show_ssh_auth_method_cmd);
     install_element(CONFIG_NODE, &set_ssh_publickey_auth_cmd);
