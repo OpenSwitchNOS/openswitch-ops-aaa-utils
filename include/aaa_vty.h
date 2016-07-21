@@ -25,12 +25,65 @@
 #ifndef _AAA_VTY_H
 #define _AAA_VTY_H
 
+
+/* Return value based on outcome of the db transaction */
+inline static int
+config_finish_result (enum ovsdb_idl_txn_status status)
+{
+    if ((status == TXN_SUCCESS) || (status == TXN_UNCHANGED)) {
+        return CMD_SUCCESS;
+    }
+    return CMD_WARNING;
+}
+
+/* Standard DB transaction operations */
+
+#define START_DB_TXN(txn)                                       \
+    do {                                                        \
+        txn = cli_do_config_start();                            \
+        if (txn == NULL) {                                      \
+            vty_out(vty, "ovsdb_idl_txn_create failed: %s: %d\n",   \
+                    __FILE__, __LINE__);                            \
+            cli_do_config_abort(txn);                               \
+            return CMD_OVSDB_FAILURE;                               \
+        }                                                           \
+    } while (0)
+
+#define END_DB_TXN(txn)                                   \
+    do {                                                  \
+        enum ovsdb_idl_txn_status status;                 \
+        status = cli_do_config_finish(txn);               \
+        return config_finish_result(status);                \
+    } while (0)
+
+#define ERRONEOUS_DB_TXN(txn, error_message)                        \
+    do {                                                            \
+        cli_do_config_abort(txn);                                   \
+        vty_out(vty, "database transaction failed: %s: %d -- %s\n", \
+                __FILE__, __LINE__, error_message);                 \
+        return CMD_WARNING;                                         \
+    } while (0)
+
+/* used when NO error is detected but still need to terminate */
+#define ABORT_DB_TXN(txn, message)                             \
+    do {                                                       \
+        cli_do_config_abort(txn);                                   \
+        vty_out(vty, "database transaction aborted: %s: %d, %s\n",  \
+                __FILE__, __LINE__, message);                       \
+        return CMD_SUCCESS;                                         \
+    } while (0)
+
+
+/* DB transaction row name and variables */
 #define SYSTEM_AAA_RADIUS               "radius"
 #define SYSTEM_AAA_FALLBACK             "fallback"
 #define SYSTEM_AAA_RADIUS_LOCAL         "local"
 #define SYSTEM_AAA_RADIUS_AUTH          "radius_auth"
 #define RADIUS_CHAP                     "chap"
 #define RADIUS_PAP                      "pap"
+#define SYSTEM_TACACS_CONFIG_PASSKEY    "passkey"
+#define SYSTEM_TACACS_CONFIG_PORT       "port"
+#define SYSTEM_TACACS_CONFIG_TIMEOUT    "timeout"
 #define OPS_TRUE_STR                        "true"
 #define OPS_FALSE_STR                       "false"
 
