@@ -30,6 +30,9 @@
 typedef struct tacacs_server_params_s {
     bool no_form;           /* TRUE/FALSE */
     char *server_name;      /* FQDN or IP Address */
+    char *timeout;          /* Timeout */
+    char *shared_key;       /* Shared secret key */
+    char *auth_port;        /* Authentication port */
 } tacacs_server_params_t;
 
 
