@@ -31,7 +31,6 @@
 #include "vtysh/utils/system_vtysh_utils.h"
 #include "vtysh_ovsdb_aaa_context.h"
 
-
 /*-----------------------------------------------------------------------------
 | Function : vtysh_ovsdb_ovstable_parse_tacacs_cfg
 | Responsibility : parse tacacs_config column in system table
@@ -95,6 +94,46 @@ vtysh_ovsdb_ovstable_parse_tacacs_cfg(const struct smap *ifrow_tacacs, vtysh_ovs
   return e_vtysh_ok;
 }
 
+/* Util functions for tacacs server display*/
+/* qsort comparator function: priority*/
+int
+compare_nodes_by_tacacs_server_priority (const void *a, const void *b)
+{
+    const struct shash_node *const *node_a = a;
+    const struct shash_node *const *node_b = b;
+    const struct ovsrec_tacacs_server *server_a =
+                      (const struct ovsrec_tacacs_server *)(*node_a)->data;
+    const struct ovsrec_tacacs_server *server_b =
+                      (const struct ovsrec_tacacs_server *)(*node_b)->data;
+
+    return (server_a->priority - server_b->priority);
+}
+
+/* Sorting function for tacacs servers
+ * on success, returns sorted tacacs server list.
+ */
+const struct shash_node **
+sort_tacacs_server(const struct shash *list)
+{
+    if (shash_is_empty(list)) {
+        return NULL;
+    } else {
+        const struct shash_node **nodes;
+        struct shash_node *node;
+        size_t iter = 0;
+        size_t count = 0;
+
+        count = shash_count(list);
+        nodes = xmalloc(count * sizeof *nodes);
+        SHASH_FOR_EACH (node, list) {
+            nodes[iter++] = node;
+        }
+        ovs_assert(iter == count);
+        qsort(nodes, count, sizeof *nodes, compare_nodes_by_tacacs_server_priority);
+        return nodes;
+    }
+}
+
 /*-----------------------------------------------------------------------------
 | Function : vtysh_display_tacacs_server_commands
 | Responsibility : display tacacs server table commands
@@ -106,7 +145,11 @@ vtysh_ovsdb_ovstable_parse_tacacs_cfg(const struct smap *ifrow_tacacs, vtysh_ovs
 static vtysh_ret_val
 vtysh_display_tacacs_server_table(vtysh_ovsdb_cbmsg *p_msg)
 {
-  const struct ovsrec_tacacs_server *row;
+  const struct ovsrec_tacacs_server *row = NULL;
+  struct shash sorted_tacacs_servers;
+  const struct shash_node **nodes;
+  int count = 0;
+  int idx = 0;
 
   vtysh_ovsdb_config_logmsg(VTYSH_OVSDB_CONFIG_DBG,
                            "vtysh_ovsdb_tacacsservertable_clientcallback entered");
@@ -115,12 +158,23 @@ vtysh_display_tacacs_server_table(vtysh_ovsdb_cbmsg *p_msg)
       return e_vtysh_ok;
   }
 
+  shash_init(&sorted_tacacs_servers);
+
   OVSREC_TACACS_SERVER_FOR_EACH(row, p_msg->idl)
   {
+      shash_add(&sorted_tacacs_servers, row->ip_address, (void *)row);
+  }
+
+  nodes = sort_tacacs_server(&sorted_tacacs_servers);
+  count = shash_count(&sorted_tacacs_servers);
+
+  for(idx = 0; idx < count; idx++)
+  {
       /* buff size based on port 11 " port %5d", timeout 11 " timeout %2d"
-       * key 68 "key %64s"*/
+       * key 69 " key %64s"*/
       char buff[128]= {0};
       char *append_buff = buff;
+      row = (const struct ovsrec_tacacs_server *)nodes[idx]->data;
       if (*(row->tcp_port) != TACACS_SERVER_TCP_PORT_DEFAULT)
          append_buff += sprintf(append_buff, " port %ld", *(row->tcp_port));
 
@@ -131,7 +185,6 @@ vtysh_display_tacacs_server_table(vtysh_ovsdb_cbmsg *p_msg)
          append_buff += sprintf(append_buff, " key %s", row->passkey);
 
       vtysh_ovsdb_cli_print(p_msg, "tacacs-server host %s%s", row->ip_address, buff);
-      /* TODO display servers sorted by priority */
   }
 
   return e_vtysh_ok;
