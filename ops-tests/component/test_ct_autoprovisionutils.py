@@ -48,15 +48,20 @@ def setuphttpserver(h1):
 
     # Configure lighttpd conf file and root path of server
     h1("mkdir -p " + HTTP_SERVER_ROOT_PATH)
-    with open(LIGHTTPD_CONFIG) as f_config:
-        config = f_config.read()
-
+    # Framework does not pull files other than .py, removing file
+    # importing and creating same file in the test
+    # with open(LIGHTTPD_CONFIG) as f_config:
+    #     config = f_config.read()
+    config = 'echo -e "server.document-root =\"/var/www/servers/www.example.org/pages/\" \nserver.port = 80" >> ~/lighttpd.conf'
     h1(config)
+    lighttpd = h1("cat ~/lighttpd.conf")
+    print("lighttpd: {}".format(lighttpd))
 
     h1("killall -9 lighttpd")
     sleep(1)
     out = h1("lighttpd -t -f ~/lighttpd.conf")
     out += h1("echo ")
+    print("out : {}".format(out))
 
     if "Syntax OK" in out:
         out = h1("lighttpd -f ~/lighttpd.conf")
