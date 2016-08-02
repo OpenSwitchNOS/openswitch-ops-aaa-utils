@@ -129,7 +129,9 @@ config_finish_result (enum ovsdb_idl_txn_status status)
 #define SSH_PASSWORD_AUTHENTICATION_ENABLE  "ssh_passkeyauthentication_enable"
 
 #define AAA_GROUP_HELP_STR                    "Define AAA server group\n"
-#define AAA_SERVER_HELP_STR                   "Specify a server type. (TACACS+)\n"
+#define AAA_SERVER_TYPE_HELP_STR              "Specify a server type\n"
+#define AAA_SERVER_HELP_STR                   "Specify a server\n"
+#define AAA_SERVER_NAME_HELP_STR              "Server IP address or hostname\n"
 #define RADIUS_HELP_STR                       "Radius server\n"
 #define TACACS_HELP_STR                       "TACACS+ server\n"
 #define AAA_GROUP_NAME_HELP_STR               "Specify a server group name\n"
