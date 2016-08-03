@@ -60,7 +60,9 @@ SYSTEM_AAA_COLUMN = "aaa"
 SYSTEM_OTHER_CONFIG = "other_config"
 SYSTEM_TACACS_CONFIG_COLUMN = "tacacs_config"
 SYSTEM_RADIUS_SERVER_COLUMN = "radius_servers"
+SYSTEM_TACACS_SERVER_COLUMN = "tacacs_servers"
 RADIUS_SERVER_TABLE = "Radius_Server"
+TACACS_SERVER_TABLE = "Tacacs_Server"
 
 SYSTEM_AUTO_PROVISIONING_STATUS_COLUMN = "auto_provisioning_status"
 
@@ -77,6 +79,7 @@ RADIUS_SERVER_TIMEOUT = "timeout"
 RADIUS_SERVER_RETRIES = "retries"
 RADIUS_SEREVR_PRIORITY = "priority"
 
+TACACS_SERVER_IPADDRESS = "ip_address"
 TACACS_SERVER_PORT = "tcp_port"
 TACACS_SERVER_PASSKEY = "passkey"
 TACACS_SERVER_TIMEOUT = "timeout"
@@ -334,6 +337,97 @@ def update_ssh_config_file():
         f.write(contents)
 
 
+# ----------------------- modify_common_auth_file_tacacs -------------------
+# The following functionality should be as part of a single function
+# that handles both tacacs & radius.
+# Have temporarily created a new function in order to test tacacs
+# without breaking radius.
+def modify_common_auth_session_file_tacacs(fallback_value, radius_value,
+                                    radius_xap_value):
+    '''
+    modify common-auth-access files, based on tacacs values set in DB
+    '''
+
+    vlog.info("modify_common_auth_session_file_tacacs called\n")
+
+    for ovs_rec in idl.tables[RADIUS_SERVER_TABLE].rows.itervalues():
+        if ovs_rec.retries:
+            radius_retries = ",".join(str(i) for i in ovs_rec.retries)
+
+    vlog.info("TACACS_SERVER_TABLE retries done\n")
+
+    local_auth = [" ", " "]
+    radius_auth = [" ", " "]
+    tacacs_auth = [" ", " "]
+    fallback_and_radius_auth = [" ", " "]
+    fallback_local_auth = [" ", " "]
+    filename = [" ", " "]
+
+    # If radius with CHAP is enabled then for all auth
+    # functions use pam_radius_chap_auth.so module.
+    # Other functions, e.g. session, accounting etc. should
+    # continue to use pam_radius_auth.so module
+
+    if radius_xap_value == RADIUS_CHAP:
+        radius_lib_suffix = "chap_auth.so"
+    else:
+        radius_lib_suffix = "auth.so"
+
+    local_auth[0] = "auth\t[success=1 default=ignore]\tpam_unix.so nullok\n"
+    radius_auth[0] = \
+        "auth\t[success=1 default=ignore]\tpam_radius_"
+    tacacs_auth[0] = \
+        "auth\trequired\t/usr/lib/security/pam_tacplus.so"
+    fallback_and_radius_auth[0] = \
+        "auth\t[success=2 authinfo_unavail=ignore default=1]\tpam_radius_"
+
+    fallback_local_auth[0] =  \
+        "auth\t[success=1 default=ignore]\tpam_unix.so\ttry_first_pass\n"
+
+    local_auth[1] = "session\trequired\tpam_unix.so\n"
+    radius_auth[1] = "session\trequired\tpam_radius_auth.so\n"
+    tacacs_auth[1] = "session\trequired\t/usr/lib/security/pam_tacplus.so"
+
+    fallback_and_radius_auth[1] = \
+        "session\t[success=done new_authtok_reqd=done authinfo_unavail=ignore \
+        session_err=ignore default=die]\tpam_radius_auth.so\n"
+
+    fallback_local_auth[1] = "session\trequired\tpam_unix.so\n"
+
+    filename[0] = PAM_ETC_CONFIG_DIR + "common-auth-access"
+    filename[1] = PAM_ETC_CONFIG_DIR + "common-session-access"
+    for count in range(0, 2):
+        with open(filename[count], "r") as f:
+            contents = f.readlines()
+        for index, line in enumerate(contents):
+            if local_auth[count] in line or radius_auth[count] in line:
+                vlog.info("Deleting %s" % contents[index])
+                del contents[index]
+                break
+            elif tacacs_auth[count] in line:
+                vlog.info("Deleting %s" % contents[index])
+                del contents[index]
+                break
+            elif fallback_and_radius_auth[count] in line:
+                vlog.info("Deleting %s" % contents[index])
+                del contents[index]
+                vlog.info("Deleting %s" % contents[index])
+                del contents[index]
+                break
+
+        if (count == 0):
+            for ovs_rec in idl.tables[TACACS_SERVER_TABLE].rows.itervalues():
+                tac_cfg = "auth\trequired\t/usr/lib/security/pam_tacplus.so\tdebug"
+                vlog.info("Inserting TACACS cfg for server %s at line %d\n" % (ovs_rec.ip_address, index))
+                contents.insert(index, tac_cfg + "\tserver=" + str(ovs_rec.ip_address) + ":" + str(ovs_rec.tcp_port[0]) + "\tsecret=" + str(ovs_rec.passkey[0]) + "\n")
+                vlog.info("Inserted TACACS cfg at line %d\n" % index)
+                index += 1
+
+        vlog.info("Writing to file %s" % filename[count])
+        with open(filename[count], "w") as f:
+            contents = "".join(contents)
+            f.write(contents)
+
 # ----------------------- modify_common_auth_file -------------------
 def modify_common_auth_session_file(fallback_value, radius_value,
                                     radius_xap_value):
@@ -484,6 +578,11 @@ def update_access_files():
             f.write(newdata)
         count += 1
 
+    # To modify common auth and common session files for tacacs
+    # This call point will be placed at a right call-point.
+    vlog.info("Calling modify_common_auth_session_file_tacacs")
+    modify_common_auth_session_file_tacacs(fallback_value, radius_value,
+                                    radius_auth_value)
 
 #---------------- aaa_reconfigure() ----------------
 def aaa_util_reconfigure():
@@ -571,6 +670,14 @@ def main():
                                     RADIUS_SERVER_TIMEOUT,
                                     RADIUS_SERVER_RETRIES,
                                     RADIUS_SEREVR_PRIORITY])
+
+    schema_helper.register_columns(SYSTEM_TABLE,
+                                   [SYSTEM_TACACS_SERVER_COLUMN])
+    schema_helper.register_columns(TACACS_SERVER_TABLE,
+                                   [TACACS_SERVER_IPADDRESS,
+                                    TACACS_SERVER_PORT,
+                                    TACACS_SERVER_PASSKEY,
+                                    TACACS_SERVER_TIMEOUT])
 
     idl = ovs.db.idl.Idl(remote, schema_helper)
 
