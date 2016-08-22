@@ -47,11 +47,35 @@ vtysh_ovsdb_ovstable_parse_tacacs_cfg(const struct smap *ifrow_tacacs, vtysh_ovs
   const char *timeout = NULL;
   const char *passkey = NULL;
   const char *auth_type = NULL;
+  //const char *data = NULL;
 
   if(ifrow_tacacs == NULL)
   {
     return e_vtysh_error;
   }
+
+/*
+  data = smap_get(ifrow_aaa, SYSTEM_AAA_TACACS);
+  if (data)
+  {
+      if (!VTYSH_STR_EQ(data, OPS_FALSE_STR))
+      {
+          snprintf(msg_str, sizeof(msg_str),"%s", "aaa authentication"
+                   " login radius");
+
+          data = smap_get(ifrow_aaa, SYSTEM_AAA_RADIUS_AUTH);
+        if (data)
+        {
+          if (!VTYSH_STR_EQ(data, RADIUS_PAP))
+          {
+            snprintf(msg_str, sizeof(msg_str), "%s", "aaa authentication"
+                     " login radius radius-auth chap");
+          }
+        }
+        vtysh_ovsdb_cli_print(p_msg, msg_str);
+    }
+  }
+*/
 
   authorization_enable = smap_get(ifrow_tacacs, SYSTEM_TACACS_CONFIG_AUTHOR);
   if (authorization_enable)
@@ -242,6 +266,61 @@ vtysh_display_tacacs_server_table(vtysh_ovsdb_cbmsg *p_msg)
 
 
 /*-----------------------------------------------------------------------------
+| Function : vtysh_display_aaa_server_group_priority
+| Responsibility : display tacacs server group_priority
+| scope : static
+| Parameters :
+|    pmsg : callback arguments from show running config handler|
+| Return : vtysh_ret_val, e_vtysh_ok
+-----------------------------------------------------------------------------*/
+static vtysh_ret_val
+vtysh_display_aaa_server_group_priority(vtysh_ovsdb_cbmsg *p_msg)
+{
+  int count = 0;
+  const struct ovsrec_aaa_server_group *group_row = NULL;
+  const struct ovsrec_aaa_server_group_prio *group_prio_list = NULL;
+
+  group_prio_list = ovsrec_aaa_server_group_prio_first(p_msg->idl);
+
+  if (!group_prio_list)
+  {
+      return e_vtysh_ok;
+  }
+
+  count = group_prio_list->n_authentication_group_prios;
+
+  if (count > 1)
+  {
+     char buff[1024]= {0};
+     char *append_buff = buff;
+     int iter = 0;
+     for(iter = 0; iter < count; iter ++)
+     {
+         group_row = group_prio_list->value_authentication_group_prios[iter];
+
+         append_buff += sprintf(append_buff, " %s", group_row->group_name);
+     }
+
+     vtysh_ovsdb_cli_print(p_msg, "aaa authentication login default group%s", buff);
+  }
+
+  else
+  {
+     group_row = group_prio_list->value_authentication_group_prios[0];
+     if (!VTYSH_STR_EQ(group_row->group_name,AAA_GROUP_TYPE_LOCAL))
+     {
+         vtysh_ovsdb_cli_print(p_msg, "aaa authentication login default group %s", group_row->group_name);
+     }
+     else if(group_prio_list->key_authentication_group_prios[0] != 0)
+     {
+         vtysh_ovsdb_cli_print(p_msg, "aaa authentication login default local");
+     }
+  }
+
+  return e_vtysh_ok;
+}
+
+/*-----------------------------------------------------------------------------
 | Function : vtysh_display_aaa_server_group_table
 | Responsibility : display AAA Server Group table
 | scope : static
@@ -332,6 +411,8 @@ vtysh_config_context_aaa_clientcallback(void *p_private)
     vtysh_display_tacacs_server_table(p_msg);
     /* Generate CLI for the AAA_Server_Group Table*/
     vtysh_display_aaa_server_group_table(p_msg);
+    /* Generate CLI for the AAA_Server_Group_Prio Table*/
+    vtysh_display_aaa_server_group_priority(p_msg);
 
     return e_vtysh_ok;
 }
