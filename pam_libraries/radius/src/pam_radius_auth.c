@@ -60,7 +60,6 @@
 #include <sys/time.h>
 
 #include "pam_radius_auth.h"
-#include "vrf-utils.h"
 
 
 #define DPRINT if (opt_debug & PAM_DEBUG_ARG) _pam_log
@@ -577,6 +576,57 @@ static void add_password(AUTH_HDR *request, unsigned char type, CONST char *pass
 	}
 }
 
+#ifdef USE_CHAP
+/*
+ * Add a CHAP RADIUS password attribute to the packet.
+ *
+ * If the attribute already exists, it's over-written. This allows
+ * us to simply call add_chap_password to update the password for different
+ * servers.
+ */
+static void add_chap_password(AUTH_HDR *request, CONST char *password)
+{
+    MD5_CTX  my_md5;
+    unsigned char chap_password[1 + AUTH_VECTOR_LEN]; /* 1 byte for the CHAP ID */
+    int cur_len = 0;
+    int length = strlen(password);
+    unsigned char chapString[1 + MAXPASS + AUTH_PASS_LEN];  /* can't be longer than this */
+    attribute_t *attr;
+    unsigned char chap_id[AUTH_VECTOR_LEN];
+
+    if (length > MAXPASS) {          /* shorten the password for now */
+        length = MAXPASS;
+    }
+
+    get_random_vector(chap_id); /* get a random value to set chap id */
+    chap_password[0] = chap_id[0];
+    chapString[0] = chap_id[0];
+    cur_len++;
+    memcpy(chapString + cur_len, password, length);
+    cur_len += length;
+
+    memcpy(chapString + cur_len, request->vector, AUTH_VECTOR_LEN);
+    cur_len += AUTH_VECTOR_LEN;
+
+    /* The following check is a safeguard from incorrect future modification */
+    if (cur_len > (1 + MAXPASS + AUTH_PASS_LEN)){
+        _pam_log(LOG_ERR, "CHAP encoding inputs too long\n", strerror(errno));
+    }
+
+    MD5Init(&my_md5);
+    MD5Update(&my_md5, chapString, cur_len);
+    memset(chapString, 0, cur_len);
+    MD5Final(chap_password + 1, &my_md5);          /* set the final vector */
+
+    attr = find_attribute(request, PW_CHAP_PASSWORD);
+    if (!attr) {
+        add_attribute(request, PW_CHAP_PASSWORD, chap_password, AUTH_VECTOR_LEN + 1);
+    } else {
+        memcpy(attr->data, chap_password, AUTH_VECTOR_LEN + 1); /* update the attribute */
+    }
+}
+#endif /* USE_CHAP */
+
 static void cleanup(radius_server_t *server)
 {
 	radius_server_t *next;
@@ -720,7 +770,11 @@ static void build_radius_packet(AUTH_HDR *request, CONST char *user, CONST char 
 	 *	Add a password, if given.
 	 */
 	if (password) {
+#ifdef USE_CHAP
+		add_chap_password(request, password);
+#else
 		add_password(request, PW_PASSWORD, password, conf->server->secret);
+#endif /* USE_CHAP */
 
 		/*
 		 *	Add a NULL password to non-accounting requests.
@@ -977,7 +1031,11 @@ static int talk_radius(radius_conf_t *conf, AUTH_HDR *request, AUTH_HDR *respons
 						add_password(request, PW_PASSWORD, password, old_password);
 						add_password(request, PW_OLD_PASSWORD, old_password, old_password);
 					} else {		/* authentication request */
+#ifdef USE_CHAP
+						add_chap_password(request, password);
+#else
 						add_password(request, PW_PASSWORD, password, server->secret);
+#endif /* USE_CHAP */
 					}
 				}
 			}

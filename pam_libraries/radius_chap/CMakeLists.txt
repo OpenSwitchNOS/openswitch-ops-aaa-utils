@@ -25,17 +25,17 @@
 
 cmake_minimum_required(VERSION 2.8)
 
-project ("pam_radius")
+project ("pam_radius_chap")
 
-set (LIBPAM_RADIUS pam_radius)
-set (LIBPAM_RADIUS_STATIC pam_radius_s)
+set (LIBPAM_RADIUS_CHAP pam_radius_chap)
+set (LIBPAM_RADIUS_CHAP_STATIC pam_radius_chap_s)
 
 include(GNUInstallDirs)
 include(FindPkgConfig)
 
 add_definitions(-DSYSCONFDIR="${CMAKE_INSTALL_SYSCONFDIR}")
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -DFTR_PROXY_ARP -DFTR_LOCAL_PROXY_ARP -DHAVE_LIBCRYPTO -DHAVE_OPENSSL_MD5_H")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_CHAP -std=gnu99 -DFTR_PROXY_ARP -DFTR_LOCAL_PROXY_ARP -DHAVE_LIBCRYPTO -DHAVE_OPENSSL_MD5_H")
 
 include_directories(
   ${CMAKE_SOURCE_DIR}
@@ -46,16 +46,16 @@ include_directories(
   )
 
 # PAM libraries source files
-set (SOURCES_LIB_PAM_RADIUS
-  src/pam_radius_auth.c 
-  src/md5.c
+set (SOURCES_LIB_PAM_RADIUS_CHAP
+  ../radius/src/pam_radius_auth.c
+  ../radius/src/md5.c
     )
 
-add_library (${LIBPAM_RADIUS} SHARED ${SOURCES_LIB_PAM_RADIUS})
+add_library (${LIBPAM_RADIUS_CHAP} SHARED ${SOURCES_LIB_PAM_RADIUS_CHAP})
 
-target_link_libraries(${LIBPAM_RADIUS}
+target_link_libraries(${LIBPAM_RADIUS_CHAP}
   util crypt pthread readline audit opsutils crypto pam pam_misc )
 
-install(TARGETS ${LIBPAM_RADIUS}
+install(TARGETS ${LIBPAM_RADIUS_CHAP}
         LIBRARY DESTINATION lib/security
        )
