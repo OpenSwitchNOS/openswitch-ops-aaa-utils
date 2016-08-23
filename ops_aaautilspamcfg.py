@@ -394,6 +394,48 @@ def update_ssh_config_file():
         contents = "".join(contents)
         f.write(contents)
 
+# ----------------------- get_server_list -------------------
+    '''
+    For a given session_type, this function returns a list of servers
+    ordered by the priorities of these servers within the group.
+    The server-groups in turn are ordered as per the configuration
+    '''
+def get_server_list(session_type):
+    server_list = []
+
+    for ovs_rec in idl.tables[AAA_SERVER_GROUP_PRIO_TABLE].rows.itervalues():
+        if ovs_rec.session_type == session_type:
+
+            size = len(ovs_rec.authentication_group_prios)
+            if size == 0 and ovs_rec.authentication_group_prios.keys()[0] == PRIO_ZERO:
+                #Default configuration (local) present.
+                vlog.info("AAA group = %s\n" % (ovs_rec.authentication_group_prios.values()[0]))
+            else:
+                for prio, group in sorted(ovs_rec.authentication_group_prios.iteritems()):
+                    if group is not None:
+                        #Decide whether to access the TACACS server table or the RADIUS one
+                        server_table = ""
+                        if group.group_type == "tacacs+":
+                            server_table = TACACS_SERVER_TABLE
+                        elif group.group_type == "radius":
+                            server_table = RADIUS_SERVER_TABLE
+                        elif group.group_type == "local":
+                            server_list.append(0)
+
+                        if server_table == RADIUS_SERVER_TABLE or server_table == TACACS_SERVER_TABLE:
+                            group_server_dict = {}
+                            for server in idl.tables[server_table].rows.itervalues():
+                                if server.group == group:
+                                    vlog.info("AAA group %s matched\n" % (group.group_name))
+                                    if (server.group_priority != 0):
+                                        group_server_dict[server.group_priority] = server
+                                    else:
+                                        group_server_dict[server.default_priority] = server
+
+                            for server_prio, server in sorted(group_server_dict.iteritems()):
+                                server_list.append(server)
+
+    return server_list
 
 # ----------------------- modify_common_auth_file -------------------
 def modify_common_auth_session_file(fallback_value, radius_value,
