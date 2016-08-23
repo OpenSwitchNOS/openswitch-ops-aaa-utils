@@ -49,4 +49,6 @@ char *_pam_get_user(pam_handle_t *);
 char *_pam_get_terminal(pam_handle_t *);
 char *_pam_get_rhost(pam_handle_t *);
 
+void switch_namespace(char *);
+
 #endif  /* PAM_TACPLUS_SUPPORT_H */

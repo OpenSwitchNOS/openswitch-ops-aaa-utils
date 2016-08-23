@@ -30,6 +30,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+
 tacplus_server_t tac_srv[TAC_PLUS_MAXSERVERS];
 int tac_srv_no = 0;
 
@@ -293,3 +300,26 @@ int _pam_parse (int argc, const char **argv) {
 
     return ctrl;
 }    /* _pam_parse */
+
+/* switch namespace */
+void switch_namespace(char *namespace) {
+    int fd;
+
+    if (strlen(namespace) == 0) {
+        return;
+    }
+
+    /* Get file descriptor for namespace */
+    fd = open(namespace, O_RDONLY);
+
+    if (fd == -1) {
+        _pam_log(LOG_ERR, "error opening ""namepsace '%s'", namespace);
+        return;
+    }
+
+    if (setns(fd, 0) == -1) {
+        _pam_log(LOG_ERR, "error switching to namespace '%s'", namespace);
+    } else {
+        _pam_log(LOG_DEBUG, "switched to namespace '%s'", namespace);
+    }
+}
