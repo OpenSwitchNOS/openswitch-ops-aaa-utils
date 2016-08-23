@@ -35,6 +35,7 @@
 
 #include "tacplus.h"
 #include "libtac.h"
+#include "support.h"
 
 /* Prompt displayed when asking for password */
 #define PASSWORD_PROMPT "Password: "
@@ -63,7 +64,8 @@ void showusage(char *progname);
 void showversion(char *progname);
 void authenticate(const struct addrinfo *tac_server, const char *tac_secret,
 		const char *user, const char *pass, const char *tty,
-		const char *remote_addr);
+		const char *remote_addr, char *tac_src_namespace,
+                char *tac_dstn_namespace, const char *tac_source_ip);
 void timeout_handler(int signum);
 
 #define	EXIT_OK		0
@@ -270,7 +272,7 @@ int main(int argc, char **argv) {
 	openlog("tacc", LOG_CONS | LOG_PID, LOG_AUTHPRIV);
 
 	if (do_authen)
-		authenticate(tac_server, tac_secret, user, pass, tty, remote_addr);
+		authenticate(tac_server, tac_secret, user, pass, tty, remote_addr, "1.2.3.4", "srcns", "dstns");
 
 	if (do_author) {
 		/* authorize user */
@@ -450,12 +452,36 @@ void sighandler(int sig) {
 
 void authenticate(const struct addrinfo *tac_server, const char *tac_secret,
 		const char *user, const char *pass, const char *tty,
-		const char *remote_addr) {
+		const char *remote_addr, char *tac_src_namespace,
+		char *tac_dstn_namespace, const char *tac_source_ip) {
 	int tac_fd;
 	int ret;
 	struct areply arep;
+	struct addrinfo hints, *source_address = NULL;
+	int rv;
 
-	tac_fd = tac_connect_single(tac_server, tac_secret, NULL, 60);
+        /* switch to destination namespace */
+        syslog(LOG_DEBUG, "tac_src_namespace = %s, tac_dstn_namespace = %s,"
+	    " source_ip = %s, src ns len = %d, dst ns len = %d",
+            tac_src_namespace, tac_dstn_namespace, tac_source_ip,
+	    (int) strlen(tac_src_namespace),
+	    (int) strlen(tac_dstn_namespace));
+        switch_namespace(tac_dstn_namespace);
+
+        /* set the source ip address for the tacacs packets */
+        if (strlen(tac_source_ip)) {
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_UNSPEC; /* use IPv4 or IPv6, whichever */
+            hints.ai_socktype = SOCK_STREAM;
+
+            /* TODO: remove hard-coding of port */
+            if ((rv = getaddrinfo(tac_source_ip, "49", &hints,
+                 &source_address)) != 0) {
+                syslog(LOG_DEBUG, "error setting the source ip information");
+            }
+        }
+
+	tac_fd = tac_connect_single(tac_server, tac_secret, source_address, 60);
 	if (tac_fd < 0) {
 		if (!quiet)
 			printf("Error connecting to TACACS+ server: %m\n");

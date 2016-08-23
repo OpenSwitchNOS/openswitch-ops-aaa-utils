@@ -30,12 +30,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+
 tacplus_server_t tac_srv[TAC_PLUS_MAXSERVERS];
 int tac_srv_no = 0;
 
 char tac_service[64];
 char tac_protocol[64];
 char tac_prompt[64];
+
+char tac_src_namespace[64];
+char tac_dstn_namespace[64];
+
+char tac_source_ip[64];
+
+extern int setns(int fd, int nstype);
 
 void _pam_log(int err, const char *format,...) {
     char msg[256];
@@ -183,6 +197,10 @@ int _pam_parse (int argc, const char **argv) {
     tac_prompt[0] = 0;
     tac_login[0] = 0;
 
+    tac_src_namespace[0] = 0;
+    tac_dstn_namespace[0] = 0;
+    tac_source_ip[0] = 0;
+
     for (ctrl = 0; argc-- > 0; ++argv) {
         if (!strcmp (*argv, "debug")) { /* all */
             ctrl |= PAM_TAC_DEBUG;
@@ -271,6 +289,15 @@ int _pam_parse (int argc, const char **argv) {
             } else {
                 tac_readtimeout_enable = 1;
             }
+        } else if (!strncmp (*argv, "src_namespace=", 14)) {
+            /* source namespace */
+            xstrcpy (tac_src_namespace, *argv + 14, sizeof(tac_src_namespace));
+        } else if (!strncmp (*argv, "dstn_namespace=", 14)) {
+            /* destination namespace */
+            xstrcpy (tac_dstn_namespace, *argv + 14, sizeof(tac_dstn_namespace));
+        } else if (!strncmp (*argv, "source_ip=", 10)) {
+            /* source ip for the packets */
+            xstrcpy (tac_source_ip, *argv + 10, sizeof(tac_source_ip));
         } else {
             _pam_log (LOG_WARNING, "unrecognized option: %s", *argv);
         }
@@ -289,7 +316,33 @@ int _pam_parse (int argc, const char **argv) {
         _pam_log(LOG_DEBUG, "tac_protocol='%s'", tac_protocol);
         _pam_log(LOG_DEBUG, "tac_prompt='%s'", tac_prompt);
         _pam_log(LOG_DEBUG, "tac_login='%s'", tac_login);
+        _pam_log(LOG_DEBUG, "tac_src_namespace='%s'", tac_src_namespace);
+        _pam_log(LOG_DEBUG, "tac_dstn_namespace='%s'", tac_dstn_namespace);
+        _pam_log(LOG_DEBUG, "tac_source_ip='%s'", tac_source_ip);
     }
 
     return ctrl;
 }    /* _pam_parse */
+
+/* switch namespace */
+void switch_namespace(char *namespace) {
+    int fd;
+
+    if (strlen(namespace) == 0) {
+        return;
+    }
+
+    /* Get file descriptor for namespace */
+    fd = open(namespace, O_RDONLY);
+
+    if (fd == -1) {
+        _pam_log(LOG_ERR, "error opening namepsace '%s'", namespace);
+        return;
+    }
+
+    if (setns(fd, 0) == -1) {
+        _pam_log(LOG_ERR, "error switching to namespace '%s'", namespace);
+    } else {
+        _pam_log(LOG_DEBUG, "switched to namespace '%s'", namespace);
+    }
+}
