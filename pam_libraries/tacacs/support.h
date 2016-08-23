@@ -38,6 +38,11 @@ extern char tac_service[64];
 extern char tac_protocol[64];
 extern char tac_prompt[64];
 
+extern char tac_src_namespace[64];
+extern char tac_dstn_namespace[64];
+
+extern char tac_source_ip[64];
+
 int _pam_parse (int, const char **);
 unsigned long _resolve_name (char *);
 unsigned long _getserveraddr (char *serv);
@@ -48,5 +53,8 @@ void *_xcalloc (size_t);
 char *_pam_get_user(pam_handle_t *);
 char *_pam_get_terminal(pam_handle_t *);
 char *_pam_get_rhost(pam_handle_t *);
+
+void switch_namespace(char *);
+void set_source_ip(const char *tac_source_ip, struct addrinfo **source_address);
 
 #endif  /* PAM_TACPLUS_SUPPORT_H */
