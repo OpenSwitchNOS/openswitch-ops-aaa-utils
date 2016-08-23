@@ -268,6 +268,23 @@ int pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc,
 	if (ctrl & PAM_TAC_DEBUG)
 		syslog(LOG_DEBUG, "%s: rhost [%s] obtained", __FUNCTION__, r_addr);
 
+        /* switch to target namespace */
+        syslog(LOG_DEBUG, "namespace = %s, source_ip = %s, len = %d",
+            tac_namespace, tac_source_ip, strlen(tac_namespace));
+        switch_namespace(tac_namespace);
+
+        /* set the source ip address for the tacacs packets */
+        if (strlen(tac_source_ip)) {
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_UNSPEC; /* use IPv4 or IPv6, whichever */
+            hints.ai_socktype = SOCK_STREAM;
+
+            if ((rv = getaddrinfo(tac_source_ip, "49", &hints,
+                 &source_address)) != 0) {
+                syslog(LOG_DEBUG, "error setting the source ip information");
+            }
+        }
+
 	status = PAM_AUTHINFO_UNAVAIL;
 	for (srv_i = 0; srv_i < tac_srv_no; srv_i++) {
 		if (ctrl & PAM_TAC_DEBUG)
