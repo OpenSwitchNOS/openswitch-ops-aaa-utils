@@ -90,7 +90,7 @@ typedef struct aaa_server_group_prio_params_s {
 #define RADIUS_SERVER_DEFAULT_RETRIES         1
 #define RADIUS_SERVER_DEFAULT_TIMEOUT         5
 
-#define MAX_CHARS_IN_TACACS_SERVER_NAME       58
+#define MAX_CHARS_IN_TACACS_SERVER_NAME       39
 #define MAX_LENGTH_TACACS_PASSKEY             64
 #define MAX_CHARS_IN_SERVER_GROUP_NAME        32
 

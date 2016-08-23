@@ -63,6 +63,7 @@ static const struct ovsrec_aaa_server_group*
            get_row_by_server_group_name(const char *name);
 static const struct ovsrec_tacacs_server*
            get_tacacs_server_by_name_port(const char *server_name, int64_t auth_port);
+static int show_aaa_authentication_priority_group();
 static int radius_server_add_host (const char *ipv4);
 static int radius_server_remove_auth_port (const char *ipv4,
                        const char *authport);
@@ -613,6 +614,54 @@ aaa_show_aaa_authenctication()
                 "Disabled", VTY_NEWLINE);
     }
 
+    return show_aaa_authentication_priority_group();
+}
+
+static int
+show_aaa_authentication_priority_group()
+{
+    int count = 0;
+    const struct ovsrec_aaa_server_group *group_row = NULL;
+    const struct ovsrec_aaa_server_group_prio *group_prio_list = NULL;
+
+    group_prio_list = ovsrec_aaa_server_group_prio_first(idl);
+
+    if (!group_prio_list)
+    {
+      return CMD_SUCCESS;
+    }
+
+    count = group_prio_list->n_authentication_group_prios;
+
+    if (count > 1)
+    {
+        int idx = 0;
+        int table_width = 50;
+        char row_separator[51] = {};
+        int64_t priority = 0;
+
+        if (!ovsrec_aaa_server_group_first(idl))
+        {
+            return CMD_SUCCESS;
+        }
+
+        /* Create row seperator string*/
+        for(idx = 0; idx < table_width; idx++)
+            row_separator[idx] = '-';
+        row_separator[table_width] = '\0';
+
+        vty_out(vty, "Default authentication for all channels:%s", VTY_NEWLINE);
+        vty_out(vty, "%s%s", row_separator, VTY_NEWLINE);
+        vty_out(vty, "%-32s | %-14s%s", "Group Name", "Group Priority", VTY_NEWLINE);
+        vty_out(vty, "%s%s", row_separator, VTY_NEWLINE);
+        for(idx = 0; idx < count; idx ++)
+        {
+            priority = group_prio_list->key_authentication_group_prios[idx];
+            group_row = group_prio_list->value_authentication_group_prios[idx];
+            vty_out(vty, "%-32s | %-14ld%s", group_row->group_name, priority, VTY_NEWLINE);
+        }
+    }
+
     return CMD_SUCCESS;
 }
 
@@ -685,6 +734,133 @@ DEFUN (cli_aaa_no_enable_tacacs_authorization,
       TACACS_ENABLE_AUTHOR_STR)
 {
     return aaa_enable_tacacs_authorization(true);
+}
+
+static int
+show_aaa_server_groups(const char* group_type)
+{
+    const struct ovsrec_aaa_server_group *group_row = NULL;
+    const struct ovsrec_tacacs_server *server_row = NULL;
+    struct shash sorted_tacacs_servers;
+    const struct shash_node **nodes;
+    int count = 0;
+    int idx = 0;
+    bool by_default_priority = false;
+    int table_width = 90;
+    char row_separator[91] = {};
+
+    if (!ovsrec_aaa_server_group_first(idl))
+    {
+        return CMD_SUCCESS;
+    }
+
+    /*TODO add radius server group table code*/
+    shash_init(&sorted_tacacs_servers);
+
+    OVSREC_TACACS_SERVER_FOR_EACH(server_row, idl)
+    {
+        shash_add(&sorted_tacacs_servers, server_row->ip_address, (void *)server_row);
+    }
+
+    nodes = sort_tacacs_server(&sorted_tacacs_servers, by_default_priority);
+    count = shash_count(&sorted_tacacs_servers);
+
+    group_row = ovsrec_aaa_server_group_first(idl);
+    if (group_row == NULL) {
+        vty_out(vty, "No AAA Server Group configured%s", VTY_NEWLINE);
+        return CMD_SUCCESS;
+    }
+
+    /* Create row seperator string*/
+    for(idx = 0; idx < table_width; idx++)
+        row_separator[idx] = '-';
+    row_separator[table_width] = '\0';
+
+    vty_out(vty, "%s******* AAA Mechanism TACACS+ *******%s", VTY_NEWLINE, VTY_NEWLINE);
+
+    vty_out(vty, "%s%s", row_separator, VTY_NEWLINE);
+    vty_out(vty, "%-32s| %-39s| %-5s| %-8s%s","GROUP NAME", "SERVER NAME",
+                                          "PORT", "PRIORITY", VTY_NEWLINE);
+    vty_out(vty, "%s%s", row_separator, VTY_NEWLINE);
+
+    OVSREC_AAA_SERVER_GROUP_FOR_EACH(group_row, idl)
+    {
+        bool empty_group = true;
+        if (group_type && !VTYSH_STR_EQ(group_type, group_row->group_type))
+        {
+            continue;
+        }
+
+        if (VTYSH_STR_EQ(group_row->group_name, SYSTEM_AAA_TACACS_PLUS)
+            || VTYSH_STR_EQ(group_row->group_name, SYSTEM_AAA_RADIUS)
+            || VTYSH_STR_EQ(group_row->group_name, SYSTEM_AAA_LOCAL))
+        {
+            continue;
+        }
+
+        for(idx = 0; idx < count; idx++)
+        {
+            server_row = (const struct ovsrec_tacacs_server *)nodes[idx]->data;
+            if (server_row->group == group_row)
+            {
+                empty_group = false;
+                vty_out(vty, "%-32s| %-39s| %-5ld| %-ld%s", group_row->group_name,
+                        server_row->ip_address, server_row->tcp_port,
+                        server_row->group_priority, VTY_NEWLINE);
+            }
+        }
+        if (!empty_group)
+        {
+            vty_out(vty, "%s%s", row_separator, VTY_NEWLINE);
+        }
+    }
+
+    by_default_priority = true;
+    free(nodes);
+    nodes = NULL;
+    nodes = sort_tacacs_server(&sorted_tacacs_servers, by_default_priority);
+
+    /*print tacacs+ default group rows*/
+    if ((group_type && VTYSH_STR_EQ(group_type, SYSTEM_AAA_TACACS_PLUS))
+        || !group_type)
+    {
+        const struct ovsrec_aaa_server_group *default_group = NULL;
+        default_group = get_row_by_server_group_name(SYSTEM_AAA_TACACS_PLUS);
+        bool empty_group = true;
+
+        for(idx = 0; idx < count; idx++)
+        {
+            server_row = (const struct ovsrec_tacacs_server *)nodes[idx]->data;
+            if (server_row->group == default_group)
+            {
+                empty_group = false;
+                vty_out(vty, "%-32s| %-39s| %-5ld| %-8ld%s", "default",
+                        server_row->ip_address, server_row->tcp_port,
+                        server_row->default_priority, VTY_NEWLINE);
+            }
+        }
+        if (!empty_group)
+        {
+            vty_out(vty, "%s%s", row_separator, VTY_NEWLINE);
+        }
+    }
+    shash_destroy(&sorted_tacacs_servers);
+    free(nodes);
+    return CMD_SUCCESS;
+}
+
+DEFUN(cli_show_aaa_server_groups,
+      show_aaa_server_groups_cmd,
+      "show aaa server-groups {radius | tacacs+}",
+      SHOW_STR
+      AAA_STR
+      AAA_GROUP_HELP_STR
+      RADIUS_HELP_STR
+      TACACS_HELP_STR)
+{
+    if (argv[0] && VTYSH_STR_EQ(argv[0], SYSTEM_AAA_RADIUS))
+        return show_aaa_server_groups(argv[0]);
+    return show_aaa_server_groups(argv[1]);
 }
 
 const int
@@ -2095,7 +2271,8 @@ tacacs_server_sanitize_parameters(tacacs_server_params_t *server_params)
 {
     /* Check server_name to see if it exceeds maximum number of characters */
     if (strlen(server_params->server_name) > MAX_CHARS_IN_TACACS_SERVER_NAME) {
-        vty_out(vty, "Server name should be less than 58 characters%s", VTY_NEWLINE);
+        vty_out(vty, "Server name should be less than %d characters%s",
+                     MAX_CHARS_IN_TACACS_SERVER_NAME, VTY_NEWLINE);
         return CMD_ERR_NOTHING_TODO;
     }
 
@@ -2108,7 +2285,8 @@ tacacs_server_sanitize_parameters(tacacs_server_params_t *server_params)
     /* Check the validity of passkey */
     if (server_params->shared_key != NULL) {
         if (strlen(server_params->shared_key) > MAX_LENGTH_TACACS_PASSKEY) {
-            vty_out(vty, "Length of passkey should be less than 64 %s", VTY_NEWLINE);
+            vty_out(vty, "Length of passkey should be less than %d %s",
+                         MAX_LENGTH_TACACS_PASSKEY, VTY_NEWLINE);
             return CMD_ERR_NOTHING_TODO;
         }
     }
@@ -2296,6 +2474,7 @@ static void
 show_global_tacacs_config(const struct ovsrec_system *ovs)
 {
     const char *passkey = NULL;
+    const char *auth_type = NULL;
     int64_t tcp_port = 0;
     int64_t timeout = 0;
 
@@ -2303,11 +2482,13 @@ show_global_tacacs_config(const struct ovsrec_system *ovs)
     passkey = smap_get(&ovs->aaa, SYSTEM_AAA_TACACS_PASSKEY);
     tcp_port = atoi(smap_get(&ovs->aaa, SYSTEM_AAA_TACACS_TCP_PORT));
     timeout = atoi(smap_get(&ovs->aaa,  SYSTEM_AAA_TACACS_TIMEOUT));
+    auth_type = smap_get(&ovs->aaa, SYSTEM_AAA_TACACS_AUTH);
 
     vty_out(vty, "%s******** Global TACACS+ configuration ******* %s", VTY_NEWLINE, VTY_NEWLINE);
     vty_out(vty, "Shared secret: %s %s", passkey, VTY_NEWLINE);
     vty_out(vty, "Timeout: %ld %s", timeout, VTY_NEWLINE);
     vty_out(vty, "Auth port: %ld %s", tcp_port, VTY_NEWLINE);
+    vty_out (vty, "Auth-Type: %s %s", auth_type, VTY_NEWLINE);
     vty_out(vty, "Number of servers: %zd %s%s", ovs->n_tacacs_servers, VTY_NEWLINE, VTY_NEWLINE);
 }
 
@@ -2327,6 +2508,9 @@ show_detailed_tacacs_server_data()
         vty_out(vty, " Auth port\t\t: %ld%s", row->tcp_port, VTY_NEWLINE);
         vty_out(vty, " Shared secret\t\t: %s%s", row->passkey, VTY_NEWLINE);
         vty_out(vty, " Timeout\t\t: %ld%s", *(row->timeout), VTY_NEWLINE);
+        vty_out(vty, " Auth-Type\t\t: %s%s", row->auth_type, VTY_NEWLINE);
+        vty_out(vty, " Server-Group\t\t: %s%s", row->group->group_name, VTY_NEWLINE);
+        vty_out(vty, " Default-Priority\t\t: %ld%s", row->default_priority, VTY_NEWLINE);
         vty_out(vty, "%s", VTY_NEWLINE);
     }
 }
@@ -2337,15 +2521,11 @@ show_summarized_tacacs_server_data()
 {
     const struct ovsrec_tacacs_server *row = NULL;
 
-    vty_out(vty, "------------------------------------------------------------------------------"
-            "----------------------------------------------------------------%s", VTY_NEWLINE);
-    vty_out(vty, "%39s  %15s  %3s %s", "NAME", "PORT", "STATUS", VTY_NEWLINE);
-    vty_out(vty, "------------------------------------------------------------------------------"
-            "----------------------------------------------------------------\%s", VTY_NEWLINE);
+    vty_out(vty, "---------------------------------------------%s", VTY_NEWLINE);
+    vty_out(vty, "%39s %5s%s", "NAME", "PORT", VTY_NEWLINE);
+    vty_out(vty, "---------------------------------------------%s", VTY_NEWLINE);
     OVSREC_TACACS_SERVER_FOR_EACH(row, idl) {
-        vty_out(vty,"  %39s", row->ip_address);
-        vty_out(vty," %15ld", row->tcp_port);
-        vty_out(vty, "%s", VTY_NEWLINE);
+        vty_out(vty,"%39s %5ld%s", row->ip_address, row->tcp_port, VTY_NEWLINE);
     }
 }
 
@@ -2390,7 +2570,8 @@ DEFUN(cli_show_tacacs_server,
 {
     bool detail = false;
 
-    if (argv[0] != NULL && !strcmp(argv[0], "detail")) {
+    if (argv[0] != NULL && !strcmp(argv[0], "detail"))
+    {
         detail = true;
     }
 
@@ -2784,6 +2965,7 @@ cli_post_init(void)
     install_element(CONFIG_NODE, &radius_server_set_auth_port_cmd);
     install_element(ENABLE_NODE, &show_radius_server_cmd);
     install_element(ENABLE_NODE, &show_tacacs_server_cmd);
+    install_element(ENABLE_NODE, &show_aaa_server_groups_cmd);
     install_element(ENABLE_NODE, &show_auto_provisioning_cmd);
     install_element(ENABLE_NODE, &show_ssh_auth_method_cmd);
     install_element(CONFIG_NODE, &set_ssh_publickey_auth_cmd);
