@@ -44,6 +44,7 @@ extern "C" {
 #endif
 #include "tacplus.h"
 
+
 #if defined(DEBUGTAC) && !defined(TACDEBUG)
 #define TACDEBUG(x) syslog x;
 #else
@@ -161,6 +162,7 @@ int tac_author_send(int, const char *, char *, char *, struct tac_attrib *);
 int tac_author_read(int, struct areply *);
 void tac_add_attrib_pair(struct tac_attrib **, char *, char, char *);
 int tac_read_wait(int, int, int, int *);
+void get_priv_level(struct addrinfo *, char *, char *, char *, char *, unsigned char);
 
 /* magic.c */
 u_int32_t magic(void);

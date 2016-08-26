@@ -32,7 +32,6 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-
 #include "tacplus.h"
 #include "libtac.h"
 
@@ -85,7 +84,8 @@ static struct option long_options[] =
 		{ "authenticate", no_argument, NULL, 'T' }, { "authorize", no_argument,
 				NULL, 'R' }, { "account", no_argument, NULL, 'A' }, { "version",
 				no_argument, NULL, 'V' }, { "cmd_author",
-				no_argument, NULL, 'C' }, {"help", no_argument, NULL, 'h' },
+				no_argument, NULL, 'C' }, { "get_priv",
+                                no_argument, NULL, 'G' }, {"help", no_argument, NULL, 'h' },
 
 		/* data */
 		{ "username", required_argument, NULL, 'u' }, { "remote",
@@ -105,7 +105,7 @@ static struct option long_options[] =
 						0, 0, 0, 0 } };
 
 /* command line letters */
-char *opt_string = "TRAVhu:p:s:k:c:qr:wnS:P:L:";
+char *opt_string = "TRAVGhu:p:s:k:c:qr:wnS:P:L:";
 
 int main(int argc, char **argv) {
 	char *pass = NULL;
@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
 	flag do_authen = 0;
 	flag do_account = 0;
 	flag login_mode = 0;
-
+	flag get_privilege_level = 0;
 	/* check argc */
 	if (argc < 2) {
 		showusage(argv[0]);
@@ -163,6 +163,9 @@ int main(int argc, char **argv) {
 				break;
 			case 'C':
 				do_command_author = 1;
+				break;
+			case 'G':
+				get_privilege_level = 1;
 				break;
 			case 'V':
 				showversion(argv[0]);
@@ -271,6 +274,9 @@ int main(int argc, char **argv) {
 
 	if (do_authen)
 		authenticate(tac_server, tac_secret, user, pass, tty, remote_addr);
+
+	if (get_privilege_level)
+		get_priv_level(tac_server, tac_secret, user, tty, remote_addr, quiet);
 
 	if (do_author) {
 		/* authorize user */

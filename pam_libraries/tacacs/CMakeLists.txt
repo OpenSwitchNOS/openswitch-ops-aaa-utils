@@ -62,6 +62,7 @@ add_executable(tacc
   libtac/lib/authen_s.c
   libtac/lib/header.c
   libtac/lib/version.c
+  libtac/lib/priv_level.c
   pam_tacplus.c
   support.c)
 

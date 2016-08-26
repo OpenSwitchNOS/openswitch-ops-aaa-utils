@@ -67,6 +67,7 @@ set (SOURCES_LIB_PAM_TACACS
   lib/authen_s.c
   lib/header.c
   lib/version.c
+  lib/priv_level.c
     )
 
 add_library (${LIBPAM_TACPLUS} SHARED ${SOURCES_LIB_PAM_TACACS})
