@@ -536,7 +536,7 @@ int pam_sm_acct_mgmt(pam_handle_t * pamh, int flags, int argc,
 	struct areply arep;
 	struct tac_attrib *attr = NULL;
 	int tac_fd;
-
+        //char *sample_cmd = "";
 	user = tty = r_addr = NULL;
 	memset(&arep, 0, sizeof(arep));
 

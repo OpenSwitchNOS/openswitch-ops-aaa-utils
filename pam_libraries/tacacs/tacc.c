@@ -28,11 +28,10 @@
 #include <getopt.h>
 #include <ctype.h>
 #include <openssl/rand.h>
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-
+#include "pam_tacplus.h"
 #include "tacplus.h"
 #include "libtac.h"
 
@@ -85,7 +84,8 @@ static struct option long_options[] =
 		{ "authenticate", no_argument, NULL, 'T' }, { "authorize", no_argument,
 				NULL, 'R' }, { "account", no_argument, NULL, 'A' }, { "version",
 				no_argument, NULL, 'V' }, { "cmd_author",
-				no_argument, NULL, 'C' }, {"help", no_argument, NULL, 'h' },
+				no_argument, NULL, 'C' }, { "get_priv",
+                                no_argument, NULL, 'G' }, {"help", no_argument, NULL, 'h' },
 
 		/* data */
 		{ "username", required_argument, NULL, 'u' }, { "remote",
@@ -105,7 +105,7 @@ static struct option long_options[] =
 						0, 0, 0, 0 } };
 
 /* command line letters */
-char *opt_string = "TRAVhu:p:s:k:c:qr:wnS:P:L:";
+char *opt_string = "TRAVGhu:p:s:k:c:qr:wnS:P:L:";
 
 int main(int argc, char **argv) {
 	char *pass = NULL;
@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
 	flag do_authen = 0;
 	flag do_account = 0;
 	flag login_mode = 0;
-
+	flag get_privilege_level = 0;
 	/* check argc */
 	if (argc < 2) {
 		showusage(argv[0]);
@@ -163,6 +163,9 @@ int main(int argc, char **argv) {
 				break;
 			case 'C':
 				do_command_author = 1;
+				break;
+			case 'G':
+				get_privilege_level = 1;
 				break;
 			case 'V':
 				showversion(argv[0]);
@@ -272,6 +275,53 @@ int main(int argc, char **argv) {
 	if (do_authen)
 		authenticate(tac_server, tac_secret, user, pass, tty, remote_addr);
 
+	if (get_privilege_level) {
+		struct tac_attrib *attr = NULL;
+		tac_add_attrib(&attr, "service", "shell");
+	        tac_add_attrib(&attr, "cmd", "");
+                struct tac_attrib *ret_attr = NULL;
+                char *ret_sep = NULL;
+
+		tac_fd = tac_connect_single(tac_server, tac_secret, NULL, 60);
+		if (tac_fd < 0) {
+			if (!quiet)
+				printf("Error connecting to TACACS+ server: %m\n");
+			exit(EXIT_ERR);
+		}
+
+		tac_author_send(tac_fd, user, tty, remote_addr, attr);
+
+		tac_author_read(tac_fd, &arep);
+
+                ret_attr = arep.attr;
+                char *set_attribute = "PRIV_LVL";
+                char attr_ret[ret_attr->attr_len];
+		char value[ret_attr->attr_len];
+		ret_sep = index(ret_attr->attr, '=');
+		if (ret_sep != NULL)
+                {
+                        strncpy(attr_ret, ret_attr->attr, ret_attr->attr_len - strlen(ret_sep));
+			attr_ret[ret_attr->attr_len - strlen(ret_sep)] = '\0';
+			strncpy(value, ret_sep+1, strlen(value));
+			value[strlen(ret_sep)+1] = '\0';
+			setenv(set_attribute, value, 1);
+                        /* To make sure that the privilege level env is set and returned*/
+                        printf("Returned privilege level for user %s : %s\n",
+                               user, getenv(set_attribute));
+		}
+
+		if (arep.status != AUTHOR_STATUS_PASS_ADD
+				&& arep.status != AUTHOR_STATUS_PASS_REPL) {
+			if (!quiet)
+				printf("Authorization FAILED: %s\n", arep.msg);
+			exit(EXIT_FAIL);
+		} else {
+			if (!quiet)
+				printf("Authorization OK: %s\n", arep.msg);
+		}
+
+		tac_free_attrib(&attr);
+	}
 	if (do_author) {
 		/* authorize user */
 		struct tac_attrib *attr = NULL;
