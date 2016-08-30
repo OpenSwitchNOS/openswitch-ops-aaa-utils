@@ -71,19 +71,6 @@ vtysh_ovsdb_ovstable_parse_tacacs_cfg(const struct smap *ifrow_aaa, vtysh_ovsdb_
       }
   }
 
-  authorization_enable = smap_get(ifrow_aaa, SYSTEM_TACACS_CONFIG_AUTHOR);
-  if (authorization_enable)
-  {
-    if (!VTYSH_STR_EQ(authorization_enable, TACACS_SERVER_AUTHOR_DEFAULT))
-    {
-        vtysh_ovsdb_cli_print(p_msg,"aaa authorization tacacs+ enable");
-    }
-    else
-    {
-        vtysh_ovsdb_cli_print(p_msg,"no aaa authorization tacacs+ enable");
-    }
-  }
-
   passkey = smap_get(ifrow_aaa, SYSTEM_AAA_TACACS_PASSKEY);
   if (passkey)
   {
