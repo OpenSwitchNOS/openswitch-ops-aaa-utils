@@ -505,6 +505,20 @@ int pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc,
 		pass = NULL;
 	}
 
+	/*
+	 * set the environment variable if authentication is successful
+	 * this will be used by accounting and session modules
+	 */
+	if (status == PAM_SUCCESS) {
+		if ((pam_putenv(pamh, "auth_status=success")) != PAM_SUCCESS) {
+			syslog(LOG_ERR, "%s: error setting PAM environment",
+			    __FUNCTION__);
+		} else {
+			syslog(LOG_INFO, "%s: success setting PAM environment",
+			    __FUNCTION__);
+		}
+	}
+
 	return status;
 } /* pam_sm_authenticate */
 
@@ -536,6 +550,21 @@ int pam_sm_acct_mgmt(pam_handle_t * pamh, int flags, int argc,
 	struct areply arep;
 	struct tac_attrib *attr = NULL;
 	int tac_fd;
+        const char *auth_status;
+
+	/*
+	 * accounting is not supported yet, return SUCCESS
+	 * if authentication was successful with Tacacs
+	 */
+	if ((auth_status = pam_getenv(pamh, "auth_status")) == NULL) {
+		syslog(LOG_INFO, "%s: unable to get PAM env auth_status",
+                                                __FUNCTION__);
+		return PAM_AUTH_ERR;
+	} else {
+		syslog(LOG_INFO, "%s: got PAM env, auth_status = %s",
+		    __FUNCTION__, auth_status);
+		return PAM_SUCCESS;
+	}
 
 	user = tty = r_addr = NULL;
 	memset(&arep, 0, sizeof(arep));
@@ -699,6 +728,23 @@ int pam_sm_acct_mgmt(pam_handle_t * pamh, int flags, int argc,
 PAM_EXTERN
 int pam_sm_open_session(pam_handle_t * pamh, int flags, int argc,
 		const char **argv) {
+
+	const char *auth_status;
+
+	/*
+	 * session management is not supported yet, return SUCCESS
+	 * if authentication was successful with Tacacs
+	 */
+	if ((auth_status = pam_getenv(pamh, "auth_status")) == NULL) {
+		syslog(LOG_INFO, "%s: unable to get PAM env auth_status",
+		    __FUNCTION__);
+		return PAM_AUTH_ERR;
+	} else {
+		syslog(LOG_INFO, "%s: got PAM env, auth_status = %s",
+		    __FUNCTION__, auth_status);
+		return PAM_SUCCESS;
+	}
+
 #if defined(HAVE_OPENSSL_RAND_H) && defined(HAVE_LIBCRYPTO)
       RAND_pseudo_bytes((unsigned char *) &task_id, sizeof(task_id));
 #else
