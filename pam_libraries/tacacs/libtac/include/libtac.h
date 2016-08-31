@@ -61,6 +61,8 @@ extern "C" {
 extern int logmsg __P((int, const char*, ...));
 #endif
 
+#define TACC_CONN_TIMEOUT 60
+
 /* u_int32_t support for sun */
 #ifdef sun
 typedef unsigned int u_int32_t;
@@ -79,6 +81,10 @@ struct areply {
 	int flags :8;
 	int seq_no :8;
 };
+
+#define EXIT_OK         0
+#define EXIT_FAIL       1	/* AAA failure (or server error) */
+#define EXIT_ERR        2	/* local error */
 
 #ifndef TAC_PLUS_MAXSERVERS
 #define TAC_PLUS_MAXSERVERS 8
@@ -161,6 +167,10 @@ int tac_author_send(int, const char *, char *, char *, struct tac_attrib *);
 int tac_author_read(int, struct areply *);
 void tac_add_attrib_pair(struct tac_attrib **, char *, char, char *);
 int tac_read_wait(int, int, int, int *);
+int tac_cmd_author(const char *tac_server_name, const char *tac_secret,
+                   char *user, char * tty, char *remote_addr,
+                   char *service, char *protocol, char *command,
+                   int timeout, unsigned char quiet);
 
 /* magic.c */
 u_int32_t magic(void);
