@@ -105,7 +105,6 @@ TACACS_SERVER_PASSKEY_DEFAULT = "testing123-1"
 TACACS_SERVER_TIMEOUT_DEFAULT = "5"
 
 #TACACS+ Globals - from aaa column in System Table
-GBL_TACACS_SERVER_PORT = "tacacs_tcp_port"
 GBL_TACACS_SERVER_PASSKEY = "tacacs_passkey"
 GBL_TACACS_SERVER_TIMEOUT = "tacacs_timeout"
 GBL_TACACS_SERVER_AUTH_TYPE = "tacacs_auth"
@@ -137,6 +136,7 @@ SFTP_SERVER_CONFIG = "sftp_server_enable"
 PERFORMED = "performed"
 URL = "url"
 
+global_aaa_default = {}
 #---------------- unixctl_exit --------------------------
 
 
@@ -232,7 +232,6 @@ def add_default_row():
     data[SSH_PASSKEY_AUTHENTICATION_ENABLE] = AUTH_KEY_ENABLE
     data[SSH_PUBLICKEY_AUTHENTICATION_ENABLE] = AUTH_KEY_ENABLE
     # Default values for tacacs
-    data[GBL_TACACS_SERVER_PORT] = TACACS_SERVER_TCP_PORT_DEFAULT
     data[GBL_TACACS_SERVER_PASSKEY] = TACACS_SERVER_PASSKEY_DEFAULT
     data[GBL_TACACS_SERVER_TIMEOUT] = TACACS_SERVER_TIMEOUT_DEFAULT
     data[GBL_TACACS_SERVER_AUTH_TYPE] = TACACS_PAP
@@ -409,6 +408,12 @@ def update_ssh_config_file():
 def get_server_list(session_type):
 
     server_list = []
+    global_default = {}
+
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        break
+    global global_default = getattr(ovs_rec, SYSTEM_AAA_COLUMN)
+
     for ovs_rec in idl.tables[AAA_SERVER_GROUP_PRIO_TABLE].rows.itervalues():
         if ovs_rec.session_type != session_type:
             continue
@@ -465,6 +470,11 @@ def modify_common_auth_access_file(server_list):
         # What we should be doing is to configure the local authentication
         return
 
+    global_default = {}
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        break
+    global_default = getattr(ovs_rec, SYSTEM_AAA_COLUMN)
+
     file_header = "# THIS IS AN AUTO-GENERATED FILE\n" \
                   "#\n" \
                   "# /etc/pam.d/common-auth- authentication settings common to all services\n" \
@@ -498,7 +508,16 @@ def modify_common_auth_access_file(server_list):
             if server_type == AAA_LOCAL:
                 auth_line = "auth\tsufficient\t" + PAM_LOCAL_MODULE + " nullok\n"
             elif server_type == AAA_TACACS_PLUS:
-                auth_line = "auth\tsufficient\t" + PAM_TACACS_MODULE + "\tdebug server=" + server.ip_address + " secret=" + str(server.passkey) + " login=" + server.auth_type + " timeout=" + str(server.timeout) + "\n"
+                passkey = server.passkey[0]
+                if (not passkey):
+                    passkey = global_default[GBL_TACACS_SERVER_PASSKEY]
+                timeout = server.timeout[0]
+                if (not timeout)
+                    timeout = int(global_default[GBL_TACACS_SERVER_TIMEOUT])
+                auth_type = server.auth_type[0]
+                if (not auth_type):
+                    auth_type = global_default[GBL_TACACS_SERVER_AUTH_TYPE]
+                auth_line = "auth\tsufficient\t" + PAM_TACACS_MODULE + "\tdebug server=" + server.ip_address + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
 
             f.write(auth_line)
 
@@ -509,7 +528,16 @@ def modify_common_auth_access_file(server_list):
         if server_type == AAA_LOCAL:
             auth_line = "auth\t[success=1 default=ignore]\t" + PAM_LOCAL_MODULE + "nullok\n"
         elif server_type == AAA_TACACS_PLUS:
-            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + server.ip_address + " secret=" + str(server.passkey) + " login=" + server.auth_type + " timeout=" + str(server.timeout) + "\n"
+            passkey = server.passkey[0]
+            if (not passkey):
+                passkey = global_default[GBL_TACACS_SERVER_PASSKEY]
+            timeout = server.timeout[0]
+            if (not timeout)
+                timeout = int(global_default[GBL_TACACS_SERVER_TIMEOUT])
+            auth_type = server.auth_type[0]
+            if (not auth_type):
+                auth_type = global_default[GBL_TACACS_SERVER_AUTH_TYPE]
+            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + server.ip_address + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
 
         f.write(auth_line)
 
