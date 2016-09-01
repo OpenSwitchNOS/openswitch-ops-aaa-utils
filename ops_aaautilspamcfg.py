@@ -457,13 +457,9 @@ def modify_common_auth_access_file(server_list):
     values set in the DB
     '''
     vlog.info("server_list = %s\n" % server_list)
+    # when no tacacs+ or radius server are configured, use local authentication
     if not server_list:
-        vlog.info("server_list is empty. Returning")
-        # TODO: For now we are returning here as no group-sequence is configured
-        # This is to enable RADIUS-only testing (by not over-writing the
-        # common-auth-access file
-        # What we should be doing is to configure the local authentication
-        return
+        server_list.append((0, AAA_LOCAL))
 
     file_header = "# THIS IS AN AUTO-GENERATED FILE\n" \
                   "#\n" \
@@ -507,7 +503,7 @@ def modify_common_auth_access_file(server_list):
         server_type = server_list[-1][1]
         auth_line = ""
         if server_type == AAA_LOCAL:
-            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_LOCAL_MODULE + "nullok\n"
+            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_LOCAL_MODULE + " nullok\n"
         elif server_type == AAA_TACACS_PLUS:
             auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + server.ip_address + " secret=" + str(server.passkey) + " login=" + server.auth_type + " timeout=" + str(server.timeout) + "\n"
 
