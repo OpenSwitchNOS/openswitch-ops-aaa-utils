@@ -114,19 +114,19 @@ aaa_set_global_status(const char *status, bool no_flag)
     /* handle no command: reset aaa authentication to local */
     if (no_flag)
     {
-        smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, OPS_FALSE_STR);
+        smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, FALSE_STR);
         smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS_AUTH, RADIUS_PAP);
     }
     else
     {
         if (strcmp(SYSTEM_AAA_RADIUS, status) == 0)
         {
-            smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, OPS_TRUE_STR);
+            smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, TRUE_STR);
             smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS_AUTH, RADIUS_PAP);
         }
         else if (strcmp(SYSTEM_AAA_RADIUS_LOCAL, status) == 0)
         {
-            smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, OPS_FALSE_STR);
+            smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, FALSE_STR);
             smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS_AUTH, RADIUS_PAP);
         }
     }
@@ -218,7 +218,15 @@ configure_aaa_server_group_priority(aaa_server_group_prio_params_t *group_prio_p
     if (group_prio_params->no_form)
     {
         key_list = xmalloc(sizeof(int64_t));
-        group_row = get_row_by_server_group_name(SYSTEM_AAA_LOCAL);
+        if (group_prio_params->aaa_method == authentication)
+        {
+            group_row = get_row_by_server_group_name(SYSTEM_AAA_LOCAL);
+        }
+        else if (group_prio_params->aaa_method == authorization)
+        {
+            group_row = get_row_by_server_group_name(SYSTEM_AAA_NONE);
+        }
+
         if (group_row == NULL)
         {
                 ERRONEOUS_DB_TXN(priority_txn, "AAA server group does not exist.");
@@ -246,9 +254,19 @@ configure_aaa_server_group_priority(aaa_server_group_prio_params_t *group_prio_p
         }
     }
 
-    ovsrec_aaa_server_group_prio_set_authentication_group_prios(group_prio_default,
+    if (group_prio_params->aaa_method == authentication)
+    {
+        ovsrec_aaa_server_group_prio_set_authentication_group_prios(group_prio_default,
                                                                 key_list, value_list,
                                                                 group_count);
+    }
+    else
+    {
+        ovsrec_aaa_server_group_prio_set_authorization_group_prios(group_prio_default,
+                                                                key_list, value_list,
+                                                                group_count);
+    }
+
     free(key_list);
     free(value_list);
     /* End of transaction. */
@@ -272,8 +290,20 @@ DEFUN(cli_aaa_set_authentication,
     int keyword_skip = 0;
     aaa_server_group_prio_params_t group_prio_params;
 
+    /*
+     * because of current args implementation,
+     * we have to check this condition manually
+     */
+    if ( argv[0] == NULL && argv[1] == NULL )
+    {
+        vty_out (vty, "%% Command incomplete.%s", VTY_NEWLINE);
+        return CMD_ERR_NOTHING_TODO;
+    }
+
+    /* we need this check to take care of the no form */
     if (argc >= 1)
     {
+        /* check if the first argv is group or local and set group count*/
         if ( !argv[0] || VTYSH_STR_EQ(argv[0], AAA_GROUP))
         {
            keyword_skip = 1;
@@ -339,12 +369,12 @@ static int aaa_set_radius_authentication(const char *auth)
 
     if (strcmp(RADIUS_CHAP, auth) == 0)
     {
-        smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, OPS_TRUE_STR);
+        smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, TRUE_STR);
         smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS_AUTH, RADIUS_CHAP);
     }
     else if (strcmp(RADIUS_PAP, auth) == 0)
     {
-        smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, OPS_TRUE_STR);
+        smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS, TRUE_STR);
         smap_replace(&smap_aaa, SYSTEM_AAA_RADIUS_AUTH, RADIUS_PAP);
     }
 
@@ -408,13 +438,13 @@ aaa_fallback_option(const char *value)
 
     smap_clone(&smap_aaa, &row->aaa);
 
-    if ((strcmp(value, OPS_TRUE_STR) == 0))
+    if ((strcmp(value, TRUE_STR) == 0))
     {
-        smap_replace(&smap_aaa, SYSTEM_AAA_FALLBACK, OPS_TRUE_STR);
+        smap_replace(&smap_aaa, SYSTEM_AAA_FALLBACK, TRUE_STR);
     }
     else
     {
-        smap_replace(&smap_aaa, SYSTEM_AAA_FALLBACK, OPS_FALSE_STR);
+        smap_replace(&smap_aaa, SYSTEM_AAA_FALLBACK, FALSE_STR);
     }
 
     ovsrec_system_set_aaa(row, &smap_aaa);
@@ -443,7 +473,7 @@ DEFUN(cli_aaa_remove_fallback,
         "Fallback authentication\n"
         "Radius server unreachable\n" "Local authentication (Default)")
 {
-    return aaa_fallback_option(OPS_TRUE_STR);
+    return aaa_fallback_option(TRUE_STR);
 }
 
 /* CLI to disable fallback to local authentication. */
@@ -457,7 +487,7 @@ DEFUN(cli_aaa_no_remove_fallback,
         "Fallback authentication\n"
         "Radius server unreachable\n" "Local authentication (Default)")
 {
-    return aaa_fallback_option(OPS_FALSE_STR);
+    return aaa_fallback_option(FALSE_STR);
 }
 
 const static int
@@ -480,7 +510,7 @@ set_aaa_fail_through(bool allow_fail_through)
     smap_clone(&smap_aaa, &row->aaa);
 
     smap_replace(&smap_aaa, SYSTEM_AAA_FAIL_THROUGH,
-                 allow_fail_through ? OPS_TRUE_STR : OPS_FALSE_STR);
+                 allow_fail_through ? TRUE_STR : FALSE_STR);
 
     ovsrec_system_set_aaa(row, &smap_aaa);
 
@@ -538,7 +568,7 @@ aaa_show_aaa_authenctication()
 
     vty_out(vty, "AAA Authentication:%s", VTY_NEWLINE);
 
-    if (!strcmp(smap_get(&row->aaa, SYSTEM_AAA_FALLBACK), OPS_TRUE_STR))
+    if (!strcmp(smap_get(&row->aaa, SYSTEM_AAA_FALLBACK), TRUE_STR))
     {
         vty_out(vty, "  Fallback to local authentication\t: %s%s",
                 "Enabled", VTY_NEWLINE);
@@ -608,6 +638,72 @@ DEFUN(cli_aaa_show_aaa_authenctication,
 {
     return aaa_show_aaa_authenctication();
 }
+
+DEFUN(cli_aaa_set_authorization,
+      aaa_set_authorization_cmd,
+      "aaa authorization commands default {none | group .WORD}",
+      AAA_STR
+      AAA_USER_AUTHOR_STR
+      AAA_COMMAND_AUTHOR_STR
+      AAA_DEFAULT_LINE_HELP_STR
+      AAA_NONE_AUTHOR_HELP_STR
+      GROUP_HELP_STR
+      GROUP_NAME_HELP_STR)
+
+{
+    char **group_list = NULL;
+    int group_count = 0;
+    int keyword_skip = 0;
+    aaa_server_group_prio_params_t group_prio_params;
+
+    /*
+     * because of current args implementation,
+     * we have to check this condition manually
+     */
+    if ( argv[0] == NULL && argv[1] == NULL )
+    {
+        vty_out (vty, "%% Command incomplete.%s", VTY_NEWLINE);
+        return CMD_ERR_NOTHING_TODO;
+    }
+
+    /* we need this check to take care of the no form */
+    if (argc >= 1)
+    {
+        /* check if the first argv is group or none and set group count*/
+        if ( !argv[0] || VTYSH_STR_EQ(argv[0], AAA_GROUP))
+        {
+           keyword_skip = 1;
+           group_count = argc - keyword_skip;
+        }
+        else if (VTYSH_STR_EQ(argv[0], SYSTEM_AAA_NONE))
+        {
+           group_count = 1;
+        }
+        group_list = xmalloc(sizeof(char *) * group_count);
+        memcpy(group_list, argv + keyword_skip, sizeof(char *) * group_count);
+    }
+
+    group_prio_params.no_form = false;
+    group_prio_params.group_count = group_count;
+    group_prio_params.group_list = group_list;
+    group_prio_params.aaa_method = authorization;
+    group_prio_params.login_type = AAA_SERVER_GROUP_PRIO_SESSION_TYPE_DEFAULT;
+
+    if (vty_flags & CMD_FLAG_NO_CMD)
+    {
+        group_prio_params.no_form = true;
+    }
+
+    return configure_aaa_server_group_priority(&group_prio_params);
+}
+
+DEFUN_NO_FORM(cli_aaa_set_authorization,
+              aaa_set_authorization_cmd,
+              "aaa authorization commands default",
+              AAA_STR
+              AAA_USER_AUTHOR_STR
+              AAA_COMMAND_AUTHOR_STR
+              AAA_DEFAULT_LINE_HELP_STR);
 
 static int
 show_aaa_server_groups(const char* group_type)
@@ -2844,6 +2940,7 @@ aaa_ovsdb_init(void)
     ovsdb_idl_add_table(idl, &ovsrec_table_aaa_server_group_prio);
     ovsdb_idl_add_column(idl, &ovsrec_aaa_server_group_prio_col_session_type);
     ovsdb_idl_add_column(idl, &ovsrec_aaa_server_group_prio_col_authentication_group_prios);
+    ovsdb_idl_add_column(idl, &ovsrec_aaa_server_group_prio_col_authorization_group_prios);
 
     /* Add Auto Provision Column. */
     ovsdb_idl_add_column(idl, &ovsrec_system_col_auto_provisioning_status);
@@ -2895,6 +2992,8 @@ cli_post_init(void)
     install_element(CONFIG_NODE, &no_aaa_set_global_status_cmd);
     install_element(CONFIG_NODE, &aaa_set_authentication_cmd);
     install_element(CONFIG_NODE, &no_aaa_set_authentication_cmd);
+    install_element(CONFIG_NODE, &aaa_set_authorization_cmd);
+    install_element(CONFIG_NODE, &no_aaa_set_authorization_cmd);
     install_element(CONFIG_NODE, &aaa_set_radius_authentication_cmd);
     install_element(CONFIG_NODE, &aaa_remove_fallback_cmd);
     install_element(CONFIG_NODE, &aaa_no_remove_fallback_cmd);
