@@ -21,6 +21,7 @@ import ovs.unixctl
 import ovs.unixctl.server
 import argparse
 import ovs.vlog
+from time import sleep
 
 # Assign my_auth to default local config
 my_auth = "passwd"
