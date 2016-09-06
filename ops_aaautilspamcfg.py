@@ -167,6 +167,15 @@ def db_get_system_status(data):
 
     return False
 
+#------------------ is_aaa_fail_through_enabled() ----------
+def is_aaa_fail_through_enabled():
+
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        if ovs_rec.aaa:
+            if ovs_rec.aaa[AAA_FAIL_THROUGH] == OPS_TRUE:
+                return True
+            else:
+                return False
 
 #------------------ system_is_configured() ----------------
 def system_is_configured():
@@ -513,11 +522,14 @@ def modify_common_auth_access_file(server_list):
         f.write(file_header)
 
         # Now write the server list to the config file
-        # TODO - Check the value of "FAIL_THROUGH" & decide on sufficient/requisite
+        PAM_CONTROL_VALUE = "requisite"
+        if is_aaa_fail_through_enabled():
+            PAM_CONTROL_VALUE = "sufficient"
+
         for server, server_type in server_list[:-1]:
             auth_line = ""
             if server_type == AAA_LOCAL:
-                auth_line = "auth\tsufficient\t" + PAM_LOCAL_MODULE + " nullok\n"
+                auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_LOCAL_MODULE + " nullok\n"
             elif server_type == AAA_TACACS_PLUS:
                 ip_address = server.ip_address
                 if len(server.timeout) == 0:
@@ -532,7 +544,7 @@ def modify_common_auth_access_file(server_list):
                     passkey = global_tacacs_passkey
                 else:
                     passkey = server.passkey[0]
-                auth_line = "auth\tsufficient\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+                auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
 
             f.write(auth_line)
 
@@ -541,7 +553,7 @@ def modify_common_auth_access_file(server_list):
         server_type = server_list[-1][1]
         auth_line = ""
         if server_type == AAA_LOCAL:
-            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_LOCAL_MODULE + "nullok\n"
+            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_LOCAL_MODULE + " nullok\n"
         elif server_type == AAA_TACACS_PLUS:
             ip_address = server.ip_address
             if len(server.timeout) == 0:
