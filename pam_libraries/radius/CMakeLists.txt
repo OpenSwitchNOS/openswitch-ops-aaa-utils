@@ -50,7 +50,6 @@ include_directories(
 # PAM libraries source files
 set (SOURCES_LIB_PAM_RADIUS
   src/pam_radius_auth.c
-  src/md5.c
     )
 
 add_library (${LIBPAM_RADIUS} SHARED ${SOURCES_LIB_PAM_RADIUS})
