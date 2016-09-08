@@ -30,6 +30,7 @@
 #include <openssl/rand.h>
 #include "tacplus.h"
 #include "libtac.h"
+#include "libtac/support.h"
 
 /* Prompt displayed when asking for password */
 #define PASSWORD_PROMPT "Password: "
@@ -57,7 +58,8 @@ unsigned long getservername(char *serv);
 void showusage(char *progname);
 void authenticate(const struct addrinfo *tac_server, const char *tac_secret,
 		const char *user, const char *pass, const char *tty,
-		const char *remote_addr);
+		const char *remote_addr, char *tac_src_namespace,
+                char *tac_dstn_namespace, const char *tac_source_ip);
 void timeout_handler(int signum);
 
 #define USE_SYSTEM	1
@@ -84,9 +86,12 @@ static struct option long_options[] =
 				"secret", required_argument, NULL, 'k' }, { "command",
 				required_argument, NULL, 'c' }, { "exec", required_argument,
 				NULL, 'c' }, { "service", required_argument, NULL, 'S' }, {
-				"protocol", required_argument, NULL, 'P' }, { "remote",
+				"protocol", required_argument, NULL, 'P' },  { "remote",
 				required_argument, NULL, 'r' }, { "login", required_argument,
-				NULL, 'L' },
+				NULL, 'L' }, { "src_namespace", required_argument,
+                                NULL, 'e' }, { "dstn_namespace", required_argument,
+                                NULL, 'f' }, { "source_ip", required_argument,
+                                NULL, 'g' },
 
 		/* modifiers */
 		{ "quiet", no_argument, NULL, 'q' },
@@ -95,7 +100,7 @@ static struct option long_options[] =
 						0, 0, 0, 0 } };
 
 /* command line letters */
-char *opt_string = "TRAGhu:p:s:k:c:qr:wnS:P:L:";
+char *opt_string = "TRAVhu:p:s:k:c:qr:wnS:P:L:e:f:g";
 
 int main(int argc, char **argv) {
 	char *pass = NULL;
@@ -113,6 +118,11 @@ int main(int argc, char **argv) {
 	int ret;
         int cmd_author_status;
         int priv_lvl_status;
+
+	char *tac_src_namespace = NULL;
+	char *tac_dstn_namespace = NULL;
+	char *tac_source_ip = NULL;
+
 #ifndef USE_SYSTEM
 	pid_t pid;
 #endif
@@ -197,6 +207,15 @@ int main(int argc, char **argv) {
 			case 'n':
 				tac_encryption = 0;
 				break;
+                        case 'e':
+                                tac_src_namespace = optarg;
+                                break;
+                        case 'f':
+                                tac_dstn_namespace = optarg;
+                                break;
+                        case 'g':
+                                tac_source_ip = optarg;
+                                break;
 			}
 		}
 	}
@@ -264,7 +283,8 @@ int main(int argc, char **argv) {
 	openlog("tacc", LOG_CONS | LOG_PID, LOG_AUTHPRIV);
 
 	if (do_authen)
-		authenticate(tac_server, tac_secret, user, pass, tty, remote_addr);
+		authenticate(tac_server, tac_secret, user, pass, tty, remote_addr,
+		     tac_src_namespace, tac_dstn_namespace, tac_source_ip);
 
 	if (get_privilege_level) {
 		priv_lvl_status = get_priv_level(tac_server, tac_secret, user,
@@ -434,12 +454,29 @@ void sighandler(int sig) {
 
 void authenticate(const struct addrinfo *tac_server, const char *tac_secret,
 		const char *user, const char *pass, const char *tty,
-		const char *remote_addr) {
+		const char *remote_addr, char *tac_src_namespace,
+		char *tac_dstn_namespace, const char *tac_source_ip) {
 	int tac_fd;
 	int ret;
 	struct areply arep;
 
-	tac_fd = tac_connect_single(tac_server, tac_secret, NULL, 60);
+	/*struct addrinfo hints, *source_address = NULL;
+	int rv;*/
+	struct addrinfo *source_address = NULL;
+
+        /* switch to destination namespace */
+        syslog(LOG_DEBUG, "tac_src_namespace = %s, tac_dstn_namespace = %s,"
+	    " source_ip = %s, src ns len = %d, dst ns len = %d",
+            tac_src_namespace, tac_dstn_namespace, tac_source_ip,
+	    (tac_src_namespace ? ((int) strlen(tac_src_namespace)) : 0),
+	    (tac_dstn_namespace ? ((int) strlen(tac_dstn_namespace)) : 0));
+	switch_namespace(tac_dstn_namespace);
+
+        /* set the source ip address for the tacacs packets */
+	set_source_ip(tac_source_ip, &source_address);
+
+	tac_fd = tac_connect_single(tac_server, tac_secret, source_address, 60);
+
 	if (tac_fd < 0) {
 		if (!quiet)
 			printf("Error connecting to TACACS+ server: %m\n");
