@@ -63,6 +63,7 @@ extern int logmsg __P((int, const char*, ...));
 #endif
 
 #define TACC_CONN_TIMEOUT 60
+#define PRIV_LVLV_ENV "PRIV_LVL"
 
 #define PRINT(...)            printf(__VA_ARGS__)
 #define VLOG_INFORMATION(...) VLOG_INFO(__VA_ARGS__)
@@ -197,7 +198,9 @@ int tac_cmd_author(const char *tac_server_name, const char *tac_secret,
 char * get_ip_port_tuple(struct sockaddr *sa, char *ip,
                          unsigned short *port, size_t maxlen,
                          bool quiet);
-
+int get_priv_level(struct addrinfo *tac_server, char *tac_secret,
+                    char *user, char *tty, char *remote_addr,
+                    bool quiet);
 /* magic.c */
 u_int32_t magic(void);
 

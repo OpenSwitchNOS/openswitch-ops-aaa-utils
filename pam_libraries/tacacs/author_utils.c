@@ -144,3 +144,74 @@ char * get_ip_port_tuple(struct sockaddr *sa, char *ip,
     }
     return ip;
 }
+
+int get_priv_level(struct addrinfo *tac_server, char *tac_secret,
+                    char *user, char *tty, char *remote_addr,
+                    bool quiet) {
+
+    int send_status;
+    int status_code;
+    struct tac_attrib *attr = NULL;
+    tac_add_attrib(&attr, "service", "shell");
+    tac_add_attrib(&attr, "cmd", "");
+    struct tac_attrib *ret_attr = NULL;
+    char *ret_sep = NULL;
+    int tac_fd;
+    struct areply arep;
+
+    /* TACACS connection to tac_server */
+    tac_fd = tac_connect_single(tac_server, tac_secret, NULL, timeout);
+
+    if (tac_fd < 0) {
+        char ip[tac_server->ai_addrlen];
+        unsigned short port;
+        if (get_ip_port_tuple(tac_server->ai_addr,
+                               ip, &port, sizeof(ip), quiet) != NULL) {
+            LOG(quiet, VLL_ERR, "Error connecting to TACACS+ server %s:%hu:"
+                                 "%m\n",ip, port)
+        } else {
+            LOG(quiet, VLL_ERR, "Error connecting to TACACS+ server: %m\n")
+        }
+        status_code = EXIT_CONN_ERR;
+        goto CLEAN_UP;
+    }
+
+    /* TACACS authorization request to the connected server fd */
+    send_status = tac_author_send(tac_fd, user, tty, remote_addr, attr);
+
+    if (send_status < 0) {
+        LOG(quiet, VLL_ERR, "Sending authorization request failed\n");
+        status_code = EXIT_SEND_ERR;
+        goto CLEAN_UP;
+    }
+
+    tac_author_read(tac_fd, &arep);
+
+    ret_attr = arep.attr;
+    char attr_ret[ret_attr->attr_len];
+    char value[ret_attr->attr_len];
+    ret_sep = index(ret_attr->attr, '=');
+
+    if (ret_sep != NULL) {
+        strncpy(attr_ret, ret_attr->attr, ret_attr->attr_len - strlen(ret_sep));
+        attr_ret[ret_attr->attr_len - strlen(ret_sep)] = '\0';
+        strncpy(value, ret_sep+1, strlen(value));
+        value[strlen(ret_sep)+1] = '\0';
+        setenv(PRIV_LVL_ENV, value, 1);
+        /* To make sure that the privilege level env is set and returned*/
+        LOG(quiet, VLL_INFO,"Returned privilege level for user %s : %s\n" getenv(PRIV_LVL_ENV));
+        status_code = EXIT_OK;
+    }
+
+    if (arep.status != AUTHOR_STATUS_PASS_ADD
+        && arep.status != AUTHOR_STATUS_PASS_REPL) {
+        status_code = EXIT_FAIL;
+    } else {
+        status_code = EXIT_OK;
+    }
+
+    CLEAN_UP:
+        tac_free_attrib(&attr);
+        tac_free_attrib(&ret_attr);
+        return status_code;
+}
