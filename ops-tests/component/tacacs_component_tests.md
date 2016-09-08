@@ -318,7 +318,6 @@ The four TACACS+ servers present in server group table as default tacacs_plus gr
 #### Test pass criteria
 Error message `TACACS+ server already assigned to a group!` returned.
 The TACACS+ server present in server group table as mebmber of its original group sg1 in `show aaa server-group` comand output.
-
 #### Test Fail Criteria
 The TACACS+ server present in server group table as newly assigned sg2 group member in `show aaa server-group` comand output.
 
@@ -334,7 +333,6 @@ The TACACS+ server present in server group table as newly assigned sg2 group mem
 ### Test result criteria
 #### Test pass criteria
 The removed TACACS+ server present in server group table as default tacacs_plus group member in `show aaa server-group` comand output.
-
 #### Test Fail Criteria
 The removed TACACS+ server present in server group table as member of its original group in `show aaa server-group` command output
 
@@ -351,7 +349,6 @@ The removed TACACS+ server present in server group table as member of its origin
 #### Test pass criteria
 The removed TACACS+ server group sg1 is absent from the `show running-config` command output.
 The group member of removed TACACS+ server group sg1 present in server group table as default tacacs_plus group member in `show aaa server-group` comand output.
-
 #### Test Fail Criteria
 The removed TACACS+ server group sg1 present in the `show running-config` command output.
 The group member of removed TACACS+ server group sg1 present in server group table as member of sg1 group in `show aaa server-group` comand output.
