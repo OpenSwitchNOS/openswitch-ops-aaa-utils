@@ -64,7 +64,6 @@ extern int logmsg __P((int, const char*, ...));
 
 #define TACC_CONN_TIMEOUT 60
 
-#define PRINT(...)            printf(__VA_ARGS__)
 #define VLOG_INFORMATION(...) VLOG_INFO(__VA_ARGS__)
 #define VLOG_DEBUG(...)       VLOG_DBG(__VA_ARGS__)
 #define VLOG_ERROR(...)       VLOG_ERR(__VA_ARGS__)
