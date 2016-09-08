@@ -22,6 +22,9 @@ import ovs.unixctl.server
 import argparse
 import ovs.vlog
 import os
+
+import vrf_utils
+
 # Assign my_auth to default local config
 my_auth = "passwd"
 
@@ -48,11 +51,17 @@ PAM_ETC_CONFIG_DIR = "/etc/pam.d/"
 RADIUS_CLIENT = "/etc/raddb/server"
 SSHD_CONFIG = "/etc/ssh/sshd_config"
 
+DEFAULT_NAMESPACE = "/var/run/netns/nonet"
+SWITCH_NAMESPACE = "/var/run/netns/swns"
+
 # OpenSSH banner files
 # Post login banner
 MOTD_FILE = "/etc/motd"
 # Pre login banner
 BANNER_FILE = "/etc/issue.net"
+
+global_dstn_ns = ''
+global_source_ip_address = ''
 
 dispatch_list = []
 SYSTEM_TABLE = "System"
@@ -62,6 +71,11 @@ SYSTEM_RADIUS_SERVER_COLUMN = "radius_servers"
 RADIUS_SERVER_TABLE = "Radius_Server"
 SYSTEM_TACACS_SERVER_COLUMN = "tacacs_servers"
 TACACS_SERVER_TABLE = "Tacacs_Server"
+PORT_TABLE = "Port"
+
+VRF_TABLE = "VRF"
+DEFAULT_VRF_NAME = "vrf_default"
+NO_NET = "nonet"
 
 SYSTEM_AUTO_PROVISIONING_STATUS_COLUMN = "auto_provisioning_status"
 
@@ -142,6 +156,134 @@ URL = "url"
 global_tacacs_passkey = TACACS_SERVER_PASSKEY_DEFAULT
 global_tacacs_timeout = TACACS_SERVER_TIMEOUT_DEFAULT
 global_tacacs_auth = TACACS_PAP
+
+
+
+# ######################## vrf_utils.py ######################### (start)
+
+def is_ipv4(s):
+    pieces = s.split('.')
+    if len(pieces) != 4: return False
+    try: return all(0<=int(p)<256 for p in pieces)
+    except ValueError: return False
+
+def  get_mgmt_ip(idl):
+    '''
+    get the management interface ip address
+    '''
+    mgmt_ip = 'test'
+    source_interface = ''
+    global global_dstn_ns
+
+    #vlog.info("Ganesh entered get_mgmt_ip")
+
+    global_dstn_ns = ''
+
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        # get the mgmt ip address
+        if ovs_rec.mgmt_intf_status and ovs_rec.mgmt_intf_status is not None:
+            for key, value in ovs_rec.mgmt_intf_status.iteritems():
+                if key == "ip":
+                    mgmt_ip = value
+
+    return mgmt_ip
+
+def extract_ip(ip)
+    # extract the ip from [u'x.x.x.x/y'] format
+    tmp_ip = str(ip).split('\'')
+    tmp_ip_2 = tmp_ip[1].split('/')
+    vlog.info("found interface, global source ip address = %s" % (tmp_ip_2))
+    ip = tmp_ip_2[0]
+
+    return ip
+
+def get_ip_from_interface_name(idl, source_interface):
+    '''
+    get the ip address configured on the interface
+    '''
+    ip = "test ip"
+
+    for ovs_rec in idl.tables[PORT_TABLE].rows.itervalues():
+        if ovs_rec.name == source_interface:
+            ip = ovs_rec.ip4_address
+            #vlog.info("found matching ip for interface, ip =  %s" % (global_source_ip_address))
+
+            ip = extract_ip(ip)
+
+    return ip
+
+def get_vrf_name_from_ip(idl, src_ip):
+    '''
+    get the vrf configured on the interface
+    '''
+    vrf_name = "test vrf"
+
+    vlog.info("get_vrf_name_from_ip, src_ip  = %s" % (src_ip))
+
+    for ovs_rec in idl.tables[PORT_TABLE].rows.itervalues():
+        ip = ovs_rec.ip4_address
+
+        vlog.info("port table walkthrough  =  %s" % (ip))
+        if len(ip) == 0:
+            vlog.info("tmp is none")
+            continue
+        else:
+            vlog.info("tmp is non none, len = " + str(len(tmp)))
+
+        ip = extract_ip(ip)
+        if ip == src_ip:
+            vrf_id = ovs_rec.uuid
+
+            vlog.info("vrf_id = %s" % (vrf_id))
+            for ovs_rec in idl.tables[VRF_TABLE].rows.itervalues():
+                for port_row in ovs_rec.ports:
+                    vlog.info("port uuid = %s, vrf name = %s" % (port_row.uuid, ovs_rec.name))
+
+                        if port_row.uuid == vrf_id:
+                            vrf_name = ovs_rec.name
+                            break
+    return vrf_name
+
+def get_source_interface(idl):
+    '''
+    get the source interface
+    '''
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        # get the source interface configuration
+        if ovs_rec.other_config and ovs_rec.other_config is not None:
+            for key, value in ovs_rec.other_config.iteritems():
+                if key == "protocols_source":
+                    source_interface = value
+                    vlog.info("tftp_source value = %s\n" % (source_interface))
+                    return source_interface
+
+
+def get_namespace_from_vrf(idl, vrf_name):
+    '''
+    get the namespace corresponding to the VRF
+    get clarification from Krishna's team on this logic
+    '''
+
+    vlog.info("entering get_namespace_from_vrf")
+
+    if vrf_name == DEFAULT_VRF_NAME:
+        return SWITCH_NAMESPACE;
+
+    # is this the corrrect login ?
+    for ovs_rec in idl.tables[VRF].rows.itervalues():
+         if ovs_rec.name == vrf_name:
+                return ovs_rec.uuid
+
+def get_oobm_namespace():
+    '''
+    get the OOBM namespace
+    '''
+    return NO_NET
+
+
+
+# ######################## vrf_utils.py ######################### (end)
+
 
 #---------------- unixctl_exit --------------------------
 
@@ -348,6 +490,44 @@ def update_server_file():
     return
 
 
+def  update_tacacs_source_interface():
+    '''
+    Get tacacs source interface configuration for outgoing source ip and
+    namespace
+    '''
+
+    global_source_ip_address = ''
+    global_dstn_ns = ''
+
+    vlog.info("Entered update_tacacs_source_interface")
+
+    mgmt_ip = get_mgmt_ip(idl)
+    vlog.info("mgmt_ip = %s\n" % (mgmt_ip))
+
+    source_interface = get_source_interface(idl)
+    vlog.info("source_interface = %s\n" % (source_interface))
+
+    is_v4 = is_ipv4(source_interface)
+    vlog.info("is_v4 = %s\n" % (is_v4))
+
+    if is_v4 == True:
+        # ipv4 address is configured
+        global_source_ip_address = source_interface
+        vlog.info("global_source_ip_address = %s\n" % (global_source_ip_address))
+    else:
+        # hostname is configured
+        global_source_ip_address = get_ip_from_interface_name(idl, source_interface)
+        vlog.info("global_source_ip_address = %s\n" % (global_source_ip_address))
+
+    if global_source_ip_address == mgmt_ip:
+        global_dstn_ns = get_oobm_namespace()
+    else:
+        vrf_name = get_vrf_name_from_ip(idl, global_source_ip_address)
+        vlog.info("vrf_name = %s\n" % (vrf_name))
+
+        global_dstn_ns = get_namespace_from_vrf(idl, vrf_name)
+
+
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
     '''
@@ -541,7 +721,16 @@ def modify_common_auth_access_file(server_list):
                     passkey = global_tacacs_passkey
                 else:
                     passkey = server.passkey[0]
-                auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+
+                if global_dstn_ns:
+                    vlog.info("here1")
+                    auth_line = "auth\tsufficient\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                        " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
+                        " src_namespace=" + DEFAULT_NAMESPACE + " dstn_namespace=" + global_dstn_ns +  " source_ip=" + str(global_source_ip_address) + " \n"
+                else:
+                    vlog.info("here2")
+                    auth_line = "auth\tsufficient\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                        " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
 
             f.write(auth_line)
 
@@ -566,7 +755,16 @@ def modify_common_auth_access_file(server_list):
                 passkey = global_tacacs_passkey
             else:
                 passkey = server.passkey[0]
-            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+
+            if global_dstn_ns:
+                vlog.info("here3")
+                auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                    " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
+                    " src_namespace=" + DEFAULT_NAMESPACE + " dstn_namespace=" + global_dstn_ns +  " source_ip=" + str(global_source_ip_address) + " \n"
+            else:
+                vlog.info("here4")
+                auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                    " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + " \n"
 
         f.write(auth_line)
 
@@ -748,6 +946,9 @@ def aaa_util_reconfigure():
     update_access_files()
     update_ssh_config_file()
 
+    update_tacacs_source_interface()
+    vlog.info("##### global_source ip address = %s, global_dstn_ns = %s ########" % (str(global_source_ip_address), global_dstn_ns))
+
     # TODO: For now we're calling the functionality to configure
     # TACACS+ PAM config files after all RADIUS config is done
     # This way we can still test RADIUS by not configuring TACACS+
@@ -802,6 +1003,11 @@ def main():
 
     schema_helper = ovs.db.idl.SchemaHelper(location=ovs_schema)
     schema_helper.register_columns(SYSTEM_TABLE, ["cur_cfg"])
+    schema_helper.register_columns(SYSTEM_TABLE, ["other_config"])
+    schema_helper.register_columns(SYSTEM_TABLE, ["mgmt_intf_status"])
+    schema_helper.register_columns(PORT_TABLE, ["ip4_address", "name"])
+    schema_helper.register_columns(VRF_TABLE, ["name", "ports"])
+
     schema_helper.register_columns(
         SYSTEM_TABLE,
         [SYSTEM_AAA_COLUMN, SYSTEM_OTHER_CONFIG,
