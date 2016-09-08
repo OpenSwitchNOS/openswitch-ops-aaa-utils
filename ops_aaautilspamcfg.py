@@ -22,6 +22,9 @@ import ovs.unixctl.server
 import argparse
 import ovs.vlog
 import os
+
+import vrf_utils
+
 # Assign my_auth to default local config
 my_auth = "passwd"
 
@@ -54,6 +57,9 @@ MOTD_FILE = "/etc/motd"
 # Pre login banner
 BANNER_FILE = "/etc/issue.net"
 
+tacacs_dstn_ns = ''
+tacacs_src_ip = ''
+
 dispatch_list = []
 SYSTEM_TABLE = "System"
 SYSTEM_AAA_COLUMN = "aaa"
@@ -62,6 +68,8 @@ SYSTEM_RADIUS_SERVER_COLUMN = "radius_servers"
 RADIUS_SERVER_TABLE = "Radius_Server"
 SYSTEM_TACACS_SERVER_COLUMN = "tacacs_servers"
 TACACS_SERVER_TABLE = "Tacacs_Server"
+PORT_TABLE = "Port"
+VRF_TABLE = "VRF"
 
 SYSTEM_AUTO_PROVISIONING_STATUS_COLUMN = "auto_provisioning_status"
 
@@ -142,6 +150,7 @@ URL = "url"
 global_tacacs_passkey = TACACS_SERVER_PASSKEY_DEFAULT
 global_tacacs_timeout = TACACS_SERVER_TIMEOUT_DEFAULT
 global_tacacs_auth = TACACS_PAP
+
 
 #---------------- unixctl_exit --------------------------
 
@@ -348,6 +357,57 @@ def update_server_file():
     return
 
 
+def  update_tacacs_source_interface():
+    '''
+    Get tacacs source interface configuration for outgoing source ip and
+    namespace
+    '''
+
+    global tacacs_src_ip
+    global tacacs_dstn_ns
+
+    tacacs_src_ip = ''
+    tacacs_dstn_ns = ''
+
+    vlog.info("Entered update_tacacs_source_interface")
+
+    mgmt_ip = vrf_utils.get_mgmt_ip(idl)
+    vlog.info("mgmt_ip = %s\n" % (mgmt_ip))
+
+    source_interface = vrf_utils.get_tacacs_source_interface(idl)
+    if source_interface is None:
+        vlog.info("source interface is not configured")
+        return
+
+    vlog.info("source_interface = %s\n" % (source_interface))
+
+    is_v4 = vrf_utils.is_ipv4(source_interface)
+    vlog.info("is_v4 = %s\n" % (is_v4))
+
+    if is_v4 == True:
+        # ipv4 address is configured
+        tacacs_src_ip = source_interface
+        vlog.info("address configured: tacacs_src_ip = %s\n" % (tacacs_src_ip))
+    else:
+        # hostname is configured
+        tacacs_src_ip = vrf_utils.get_ip_from_interface_name(idl, source_interface)
+        vlog.info("interface configured: tacacs_src_ip = %s\n" % (tacacs_src_ip))
+
+    if tacacs_src_ip is None:
+        tacacs_src_ip = ''
+        return
+
+    if tacacs_src_ip == mgmt_ip:
+        tacacs_src_ip = ''
+        return
+    else:
+        vrf_name = vrf_utils.get_vrf_name_from_ip(idl, tacacs_src_ip)
+        vlog.info("vrf_name = %s\n" % (vrf_name))
+
+        tacacs_dstn_ns = vrf_utils.get_namespace_from_vrf(idl, vrf_name)
+        if tacacs_dstn_ns is None:
+            tacacs_dstn_ns = ''
+
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
     '''
@@ -541,7 +601,14 @@ def modify_common_auth_access_file(server_list):
                     passkey = global_tacacs_passkey
                 else:
                     passkey = server.passkey[0]
-                auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+
+                if tacacs_dstn_ns:
+                    auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                        ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
+                        " src_namespace=" + vrf_utils.NO_NET + " dstn_namespace=" + tacacs_dstn_ns +  " source_ip=" + str(tacacs_src_ip) + " \n"
+                else:
+                    auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                        ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
 
             f.write(auth_line)
 
@@ -566,7 +633,16 @@ def modify_common_auth_access_file(server_list):
                 passkey = global_tacacs_passkey
             else:
                 passkey = server.passkey[0]
-            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+
+            if tacacs_dstn_ns:
+                vlog.info("here3")
+                auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                    " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
+                    " src_namespace=" + vrf_utils.NO_NET + " dstn_namespace=" + tacacs_dstn_ns +  " source_ip=" + str(tacacs_src_ip) + " \n"
+            else:
+                vlog.info("here4")
+                auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                    " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + " \n"
 
         f.write(auth_line)
 
@@ -748,6 +824,9 @@ def aaa_util_reconfigure():
     update_access_files()
     update_ssh_config_file()
 
+    update_tacacs_source_interface()
+    vlog.info("##### global_source ip address = %s, tacacs_dstn_ns = %s ########" % (str(tacacs_src_ip), tacacs_dstn_ns))
+
     # TODO: For now we're calling the functionality to configure
     # TACACS+ PAM config files after all RADIUS config is done
     # This way we can still test RADIUS by not configuring TACACS+
@@ -802,6 +881,11 @@ def main():
 
     schema_helper = ovs.db.idl.SchemaHelper(location=ovs_schema)
     schema_helper.register_columns(SYSTEM_TABLE, ["cur_cfg"])
+    schema_helper.register_columns(SYSTEM_TABLE, ["other_config"])
+    schema_helper.register_columns(SYSTEM_TABLE, ["mgmt_intf_status"])
+    schema_helper.register_columns(PORT_TABLE, ["ip4_address", "name"])
+    schema_helper.register_columns(VRF_TABLE, ["name", "ports", "table_id"])
+
     schema_helper.register_columns(
         SYSTEM_TABLE,
         [SYSTEM_AAA_COLUMN, SYSTEM_OTHER_CONFIG,
