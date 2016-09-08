@@ -54,6 +54,9 @@ MOTD_FILE = "/etc/motd"
 # Pre login banner
 BANNER_FILE = "/etc/issue.net"
 
+global_ns = ''
+global_source_ip_address = ''
+
 dispatch_list = []
 SYSTEM_TABLE = "System"
 SYSTEM_AAA_COLUMN = "aaa"
@@ -62,6 +65,7 @@ SYSTEM_RADIUS_SERVER_COLUMN = "radius_servers"
 RADIUS_SERVER_TABLE = "Radius_Server"
 SYSTEM_TACACS_SERVER_COLUMN = "tacacs_servers"
 TACACS_SERVER_TABLE = "Tacacs_Server"
+PORT_TABLE = "Port"
 
 SYSTEM_AUTO_PROVISIONING_STATUS_COLUMN = "auto_provisioning_status"
 
@@ -347,6 +351,64 @@ def update_server_file():
 
     return
 
+def is_ipv4(s):
+    pieces = s.split('.')
+    if len(pieces) != 4: return False
+    try: return all(0<=int(p)<256 for p in pieces)
+    except ValueError: return False
+
+def  update_tacacs_source_interface():
+    '''
+    modify sshd_config file, based on the ssh authentication method
+    configured in aaa column
+    '''
+    mgmt_ip = ''
+    source_interface = ''
+    global global_source_ip_address
+    global global_ns
+
+    vlog.info("entered update_tacacs_source_interface")
+
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        # get the mgmt ip address
+        if ovs_rec.mgmt_intf_status and ovs_rec.mgmt_intf_status is not None:
+            for key, value in ovs_rec.mgmt_intf_status.iteritems():
+                if key == "ip":
+                    mgmt_ip = value
+                    vlog.info("found mgmt ip, mgmt_ip = %s\n" % (value))
+
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        # get the source interface configuration
+        if ovs_rec.other_config and ovs_rec.other_config is not None:
+            for key, value in ovs_rec.other_config.iteritems():
+                if key == "tftp_source":
+                    source_interface = value
+                    vlog.info("tftp_source value = %s\n" % (source_interface))
+
+    is_v4 = is_ipv4(source_interface)
+
+    if is_v4 == True:
+        # ipv4 address is configured
+        global_source_ip_address = source_interface
+        if source_interface == mgmt_ip:
+            global_ns = "/var/run/proc/nons"
+        else:
+            global_ns = "/var/run/proc/swns"
+    else:
+        # hostname is configured
+        for ovs_rec in idl.tables[PORT_TABLE].rows.itervalues():
+            if ovs_rec.ip4_address and ovs_rec.ip4_address is not None:
+                vlog.info("got ip4_address = %s\n" % (ovs_rec.ip4_address))
+
+            if ovs_rec.name and ovs_rec.name is not None:
+                vlog.info("got name = %s source_interface = %s \n" % (ovs_rec.name, source_interface))
+
+            if ovs_rec.name == source_interface:
+               global_source_ip_address = ovs_rec.ip4_address
+               vlog.info("found interface, global source ip address = %s" % (global_source_ip_address))
+
+       global_ns = "/var/run/proc/swns"
+
 
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
@@ -539,7 +601,16 @@ def modify_common_auth_access_file(server_list):
                     passkey = global_tacacs_passkey
                 else:
                     passkey = server.passkey[0]
-                auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+
+                if global_ns:
+                    vlog.info("here1")
+                    auth_line = "auth\tsufficient\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                        " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
+                        " src_namespace=/var/run/nons" + " dstn_namespace=" + global_ns +  " source_ip=" + global_source_ip_address + " \n"
+                else:
+                    vlog.info("here2")
+                    auth_line = "auth\tsufficient\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                        " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
 
             f.write(auth_line)
 
@@ -563,7 +634,16 @@ def modify_common_auth_access_file(server_list):
                 passkey = global_tacacs_passkey
             else:
                 passkey = server.passkey[0]
-            auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+
+            if global_ns:
+                vlog.info("here3")
+                auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                    " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + " \n"
+            else:
+                vlog.info("here4")
+                auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
+                    " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
+                    " src_namespace=/var/run/nons" + " dstn_namespace=" + global_ns +  " source_ip=" + global_source_ip_address + " \n"
 
         f.write(auth_line)
 
@@ -745,6 +825,9 @@ def aaa_util_reconfigure():
     update_access_files()
     update_ssh_config_file()
 
+    update_tacacs_source_interface()
+    vlog.info("##### global_source ip address = %s, global_ns = %s ########" % (global_source_ip_address, global_ns))
+
     # TODO: For now we're calling the functionality to configure
     # TACACS+ PAM config files after all RADIUS config is done
     # This way we can still test RADIUS by not configuring TACACS+
@@ -799,6 +882,10 @@ def main():
 
     schema_helper = ovs.db.idl.SchemaHelper(location=ovs_schema)
     schema_helper.register_columns(SYSTEM_TABLE, ["cur_cfg"])
+    schema_helper.register_columns(SYSTEM_TABLE, ["other_config"])
+    schema_helper.register_columns(SYSTEM_TABLE, ["mgmt_intf_status"])
+    schema_helper.register_columns(PORT_TABLE, ["ip4_address", "name"])
+
     schema_helper.register_columns(
         SYSTEM_TABLE,
         [SYSTEM_AAA_COLUMN, SYSTEM_OTHER_CONFIG,
