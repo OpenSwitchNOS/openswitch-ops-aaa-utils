@@ -236,6 +236,7 @@ int pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc,
 	int srv_i;
 	int tac_fd, status, msg, communicating;
         int priv_lvl_status;
+	struct addrinfo *source_address = NULL;
 
 	user = pass = tty = r_addr = NULL;
 
@@ -278,13 +279,25 @@ int pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc,
 	if (ctrl & PAM_TAC_DEBUG)
 		syslog(LOG_DEBUG, "%s: rhost [%s] obtained", __FUNCTION__, r_addr);
 
+        /* switch to destination namespace */
+	syslog(LOG_DEBUG, "tac_src_namespace = %s, tac_dstn_namespace = %s,"
+	    " source_ip = %s, src ns len = %d, dst ns len = %d",
+	    tac_src_namespace, tac_dstn_namespace, tac_source_ip,
+	    (int) strlen(tac_src_namespace),
+	    (int) strlen(tac_dstn_namespace));
+
+	switch_namespace(tac_dstn_namespace);
+
+	/* set the source ip address for the tacacs packets */
+	set_source_ip(tac_source_ip, &source_address);
+
 	status = PAM_AUTHINFO_UNAVAIL;
 	for (srv_i = 0; srv_i < tac_srv_no; srv_i++) {
 		if (ctrl & PAM_TAC_DEBUG)
 			syslog(LOG_DEBUG, "%s: trying srv %d", __FUNCTION__, srv_i);
 
 		tac_fd = tac_connect_single(tac_srv[srv_i].addr, tac_srv[srv_i].key,
-				NULL, tac_timeout);
+				source_address, tac_timeout);
 		if (tac_fd < 0) {
 			_pam_log(LOG_ERR, "connection failed srv %d: %m", srv_i);
 			continue;
@@ -536,6 +549,11 @@ int pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc,
 			return PAM_SERVICE_ERR;
 		}
 	}
+
+	/* switch to source namespace */
+	syslog(LOG_DEBUG, "tac_src_namespace = %s, source_ip = %s, len = %d",
+	    tac_src_namespace, tac_source_ip, (int) strlen(tac_src_namespace));
+	switch_namespace(tac_src_namespace);
 
 	return status;
 } /* pam_sm_authenticate */
