@@ -76,7 +76,8 @@ static struct option long_options[] =
 		{ "authenticate", no_argument, NULL, 'T' }, { "authorize", no_argument,
 				NULL, 'R' }, { "account", no_argument, NULL, 'A' }, { "version",
 				no_argument, NULL, 'V' }, { "cmd_author",
-				no_argument, NULL, 'C' }, {"help", no_argument, NULL, 'h' },
+				no_argument, NULL, 'C' }, { "get_priv",
+                                no_argument, NULL, 'G' }, {"help", no_argument, NULL, 'h' },
 
 		/* data */
 		{ "username", required_argument, NULL, 'u' }, { "remote",
@@ -96,7 +97,7 @@ static struct option long_options[] =
 						0, 0, 0, 0 } };
 
 /* command line letters */
-char *opt_string = "TRAVhu:p:s:k:c:qr:wnS:P:L:";
+char *opt_string = "TRAVGhu:p:s:k:c:qr:wnS:P:L:";
 
 int main(int argc, char **argv) {
 	char *pass = NULL;
@@ -113,6 +114,7 @@ int main(int argc, char **argv) {
 	char buf[40];
 	int ret;
         int cmd_author_status;
+        int priv_lvl_status;
 #ifndef USE_SYSTEM
 	pid_t pid;
 #endif
@@ -124,6 +126,7 @@ int main(int argc, char **argv) {
 	flag do_authen = 0;
 	flag do_account = 0;
 	flag login_mode = 0;
+        flag get_privilege_level = 0;
 
 	/* check argc */
 	if (argc < 2) {
@@ -155,6 +158,9 @@ int main(int argc, char **argv) {
 				break;
 			case 'C':
 				do_command_author = 1;
+				break;
+			case 'G':
+				get_privilege_level = 1;
 				break;
 			case 'V':
 				showversion(argv[0]);
@@ -263,6 +269,12 @@ int main(int argc, char **argv) {
 
 	if (do_authen)
 		authenticate(tac_server, tac_secret, user, pass, tty, remote_addr);
+
+	if (get_privilege_level) {
+		priv_lvl_status = get_priv_level(tac_server, tac_secret, user,
+							tty, remote_addr, quiet);
+                exit(priv_lvl_status);
+	}
 
 	if (do_author) {
                 if (!do_command_author && protocol == NULL) {
