@@ -144,3 +144,88 @@ char * get_ip_port_tuple(struct sockaddr *sa, char *ip,
     }
     return ip;
 }
+
+int get_priv_level(struct addrinfo *tac_server, const char *tac_secret,
+                    char *user, char *tty, char *remote_addr,
+                    bool quiet) {
+
+    struct tac_attrib *attr = NULL;
+    int tac_fd;
+    struct areply arep;
+    char attr_ret[arep.attr->attr_len];
+    char *value_start = NULL;
+    char priv_lvl_value[PRV_LVL_LENGTH];
+    char *value_sep = NULL;
+    int send_status;
+    int status_code;
+
+    /* TACACS connection to tac_server */
+    tac_fd = tac_connect_single(tac_server, tac_secret, NULL, DEF_TIMEOUT);
+
+    if (tac_fd < 0) {
+        char ip[tac_server->ai_addrlen];
+        unsigned short port;
+        if (get_ip_port_tuple(tac_server->ai_addr,
+                               ip, &port, sizeof(ip), quiet) != NULL) {
+            LOG(quiet, VLL_ERR, "Error connecting to TACACS+ server %s:%hu:"
+                                 "%m\n",ip, port)
+        } else {
+            LOG(quiet, VLL_ERR, "Error connecting to TACACS+ server: %m\n")
+        }
+        status_code = EXIT_CONN_ERR;
+        goto CLEAN_UP;
+    }
+
+    /* set values for tacacs attributes */
+    tac_add_attrib(&attr, "service", "shell");
+    tac_add_attrib(&attr, "cmd", "");
+
+    /* TACACS authorization request to the connected server fd */
+    send_status = tac_author_send(tac_fd, user, tty, remote_addr, attr);
+
+    if (send_status < 0) {
+        LOG(quiet, VLL_ERR, "Sending authorization request failed\n");
+        status_code = EXIT_SEND_ERR;
+        goto CLEAN_UP;
+    }
+
+    tac_author_read(tac_fd, &arep);
+
+    if (arep.attr->attr != NULL) {
+        value_sep = index(arep.attr->attr, '=');
+        /* we need the value after '=' */
+        value_start = value_sep+1;
+        if (value_sep != NULL) {
+            strncpy(attr_ret, arep.attr->attr,  arep.attr->attr_len - strlen(value_sep));
+            attr_ret[arep.attr->attr_len - strlen(value_sep)] = '\0';
+            strncpy(priv_lvl_value, value_start, sizeof(priv_lvl_value));
+            priv_lvl_value[PRV_LVL_LENGTH] = '\0';
+            printf("priv_lvl_value = %s, attr_ret = %s", priv_lvl_value, attr_ret);
+            if (strcmp(attr_ret, PRIV_RET_STR) == 0) {
+                setenv(PRIV_LVL_ENV, priv_lvl_value, 1);
+                /* To make sure that the privilege level env is set and returned*/
+                LOG(quiet, VLL_INFO,"Returned privilege level for user %s : %s\n",
+                    user, getenv(PRIV_LVL_ENV));
+                status_code = EXIT_OK;
+            } else {
+                status_code = EXIT_FAIL;
+            }
+        } else {
+            status_code = EXIT_FAIL;
+        }
+    } else {
+        status_code = EXIT_FAIL;
+    }
+
+    if (arep.status != AUTHOR_STATUS_PASS_ADD
+        && arep.status != AUTHOR_STATUS_PASS_REPL) {
+        status_code = EXIT_FAIL;
+    } else {
+        status_code = EXIT_OK;
+    }
+
+    CLEAN_UP:
+        tac_free_attrib(&attr);
+        freeaddrinfo(tac_server);
+        return status_code;
+}
