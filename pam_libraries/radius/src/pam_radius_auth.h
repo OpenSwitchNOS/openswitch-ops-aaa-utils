@@ -29,6 +29,15 @@
 #define MAXPROMPT 33               /* max prompt length, including '\0' */
 #define DEFAULT_PROMPT "Password"  /* default prompt, without the ': '  */
 
+#define PAP          "pap"
+#define LOGIN        "login="
+#define SERVER       "server="
+#define SECRET       "secret="
+#define TIMEOUT      "timeout="
+#define BYPASS_ACCT  "bypass_acct"
+
+#define RADIUS_DEFAULT_UDP_PORT 1812
+
 /*************************************************************************
  * Additional RADIUS definitions
  *************************************************************************/
@@ -45,9 +54,6 @@ typedef struct radius_server_t {
 	struct in_addr ip;
 	uint16_t port;
 	char *hostname;
-	char *secret;
-	int timeout;
-	int accounting;
 } radius_server_t;
 
 typedef struct radius_conf_t {
@@ -104,6 +110,7 @@ typedef struct radius_conf_t {
 #define PAM_USE_FIRST_PASS 4
 #define PAM_TRY_FIRST_PASS 8
 #define PAM_RUSER_ARG      16
+#define PAM_RAD_BYPASS_ACCT 32  /* bypass accounting and session mgmt */
 
 /* Module defines */
 #ifndef BUFFER_SIZE
@@ -116,7 +123,7 @@ typedef struct radius_conf_t {
                          * compiled in. This is the default.
                          */
 #ifndef CONF_FILE       /* the configuration file holding the server secret */
-#define CONF_FILE       "/etc/raddb/server"
+#define CONF_FILE       "/etc/pam.d/common-auth-access"
 #endif /* CONF_FILE */
 
 #ifndef FALSE
