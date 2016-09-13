@@ -103,7 +103,7 @@ typedef struct radius_conf_t {
 #define PAM_USE_FIRST_PASS 4
 #define PAM_TRY_FIRST_PASS 8
 #define PAM_RUSER_ARG      16
-
+#define PAM_USE_CHAP 32
 
 /* Module defines */
 #ifndef BUFFER_SIZE
