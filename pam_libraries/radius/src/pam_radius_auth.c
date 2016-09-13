@@ -65,7 +65,6 @@
 
 /* internal data */
 static CONST char *pam_module_name = "pam_radius_auth";
-static char conf_file[BUFFER_SIZE]; /* configuration file */
 static int opt_debug = FALSE;		/* print debug info */
 
 /* we need to save these from open_session to close_session, since
@@ -74,6 +73,10 @@ static int opt_debug = FALSE;		/* print debug info */
  * -- cristiang */
 static radius_server_t *live_server = NULL;
 static time_t session_time;
+
+char *secret        = NULL;
+int timeout         = 0;
+int accounting      = FALSE;
 
 /* logging */
 static void _pam_log(int err, CONST char *format, ...)
@@ -92,10 +95,13 @@ static void _pam_log(int err, CONST char *format, ...)
 static int _pam_parse(int argc, CONST char **argv, radius_conf_t *conf)
 {
 	int ctrl=0;
+	radius_server_t *server = NULL;
+
+        /* Initialize global parameters */
+        timeout = 0;
+        secret  = NULL;
 
 	memset(conf, 0, sizeof(radius_conf_t)); /* ensure it's initialized */
-
-	strcpy(conf_file, CONF_FILE);
 
 	/* set the default prompt */
 	snprintf(conf->prompt, MAXPROMPT, "%s: ", DEFAULT_PROMPT);
@@ -111,16 +117,7 @@ static int _pam_parse(int argc, CONST char **argv, radius_conf_t *conf)
 	for (ctrl=0; argc-- > 0; ++argv) {
 
 		/* generic options */
-		if (!strncmp(*argv,"conf=",5)) {
-			/* protect against buffer overflow */
-			if (strlen(*argv+5) >= sizeof(conf_file)) {
-				_pam_log(LOG_ERR, "conf= argument too long");
-				conf_file[0] = 0;
-				return 0;
-			}
-			strcpy(conf_file,*argv+5);
-
-		} else if (!strcmp(*argv, "use_first_pass")) {
+		if (!strcmp(*argv, "use_first_pass")) {
 			ctrl |= PAM_USE_FIRST_PASS;
 
 		} else if (!strcmp(*argv, "try_first_pass")) {
@@ -174,7 +171,54 @@ static int _pam_parse(int argc, CONST char **argv, radius_conf_t *conf)
 		} else if (!strncmp(*argv, "max_challenge=", 14)) {
 			conf->max_challenge = atoi(*argv+14);
 
-		} else {
+		} else if (!strncmp(*argv, SERVER, strlen(SERVER))) {
+                        radius_server_t *tmp;
+                        char *port;
+			tmp = malloc(sizeof(radius_server_t));
+                        if (tmp == NULL) {
+                                _pam_log(LOG_WARNING, "malloc failed for"
+                                         "%s", *argv);
+                                return ctrl;
+                        }
+			if (server) {
+				server->next = tmp;
+				server = server->next;
+			} else {
+				conf->server = tmp;
+				server= tmp;		/* first time */
+                        }
+                        const char *value = *argv + strlen(SERVER);
+                        server->hostname = malloc(strlen(value) + 1);
+                        if (server->hostname == NULL) {
+                                _pam_log(LOG_WARNING, "malloc failed for"
+                                         "string %s", value);
+                                return ctrl;
+                        }
+                        strncpy(server->hostname, value, strlen(value) + 1);
+                        port = strchr(server->hostname, ':');
+                        if (port != NULL) {
+                                *port = '\0';
+                                port++;
+                                server->port = atoi(port);
+                        } else {
+                                server->port = RADIUS_DEFAULT_UDP_PORT;
+                        }
+                } else if (!strncmp(*argv, SECRET, strlen(SECRET))) {
+                        const char *value = *argv + strlen(SECRET);
+                        secret = malloc(strlen(value) + 1);
+                        if ( secret == NULL) {
+                                _pam_log(LOG_WARNING, "malloc failed for string"
+                                         "%s", value);
+                                return ctrl;
+                        }
+                        strncpy(secret, value, strlen(value) + 1);
+                } else if (!strncmp(*argv, TIMEOUT, strlen(TIMEOUT))) {
+                        const char *value = *argv + strlen(TIMEOUT);
+                        timeout = atoi(value);
+                        if (timeout < 0) {
+                                timeout = 0;
+                        }
+                } else {
 			_pam_log(LOG_WARNING, "unrecognized option '%s'", *argv);
 		}
 	}
@@ -304,7 +348,7 @@ static int host2server(radius_server_t *server)
 		if (p && isdigit(*p)) {	/* the port looks like it's a number */
 			unsigned int i = atoi(p) & 0xffff;
 
-			if (!server->accounting) {
+			if (!accounting) {
 				server->port = htons((uint16_t) i);
 			} else {
 				server->port = htons((uint16_t) (i + 1));
@@ -318,7 +362,7 @@ static int host2server(radius_server_t *server)
 				DPRINT(LOG_DEBUG, "DEBUG: getservbyname('%s', udp) returned %p.\n", p, svp);
 				*(--p) = ':';		/* be sure to put the delimiter back */
 			} else {
-				if (!server->accounting) {
+				if (!accounting) {
 					svp = getservbyname ("radius", "udp");
 					DPRINT(LOG_DEBUG, "DEBUG: getservbyname(radius, udp) returned %p.\n", svp);
 				} else {
@@ -407,15 +451,15 @@ static void get_random_vector(unsigned char *vector)
  * server (http://home.cistron.nl/~miquels/radius/) does, and this code
  * seems to work with it.	It also works with Funk's Steel-Belted RADIUS.
  */
-static void get_accounting_vector(AUTH_HDR *request, radius_server_t *server)
+static void get_accounting_vector(AUTH_HDR *request)
 {
 	MD5_CTX my_md5;
-	int secretlen = strlen(server->secret);
+	int secretlen = strlen(secret);
 	int len = ntohs(request->length);
 
 	memset(request->vector, 0, AUTH_VECTOR_LEN);
 	MD5_Init(&my_md5);
-	memcpy(((char *)request) + len, server->secret, secretlen);
+	memcpy(((char *)request) + len, secret, secretlen);
 
 	MD5_Update(&my_md5, (unsigned char *)request, len + secretlen);
 	MD5_Final(request->vector, &my_md5);			/* set the final vector */
@@ -635,7 +679,7 @@ static void cleanup(radius_server_t *server)
 	while (server) {
 		next = server->next;
 		_pam_drop(server->hostname);
-		_pam_forget(server->secret);
+		_pam_forget(secret);
 		_pam_drop(server);
 		server = next;
 	}
@@ -645,81 +689,15 @@ static void cleanup(radius_server_t *server)
  * allocate and open a local port for communication with the RADIUS
  * server
  */
-static int initialize(radius_conf_t *conf, int accounting)
+static int initialize(radius_conf_t *conf, int accounting_val)
 {
 	struct sockaddr salocal;
-	char hostname[BUFFER_SIZE];
-	char secret[BUFFER_SIZE];
-
-	char buffer[BUFFER_SIZE];
-	char *p;
-	FILE *fserver;
-	radius_server_t *server = NULL;
 	struct sockaddr_in * s_in;
-	int timeout;
-	int line = 0;
 
-	/* the first time around, read the configuration file */
-	if ((fserver = fopen (conf_file, "r")) == (FILE*)NULL) {
-		_pam_log(LOG_ERR, "Could not open configuration file %s: %s\n",
-			conf_file, strerror(errno));
-		return PAM_ABORT;
-	}
-
-	while (!feof(fserver) && (fgets (buffer, sizeof(buffer), fserver) != (char*) NULL) && (!ferror(fserver))) {
-		line++;
-		p = buffer;
-
-		/*
-		 *	Skip blank lines and whitespace
-		 */
-		while (*p && ((*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n'))) {
-			p++;
-		}
-
-		/*
-		 *	Nothing, or just a comment. Ignore the line.
-		 */
-		if ((!*p) || (*p == '#')) {
-			continue;
-		}
-
-		timeout = 3;
-		if (sscanf(p, "%s %s %d", hostname, secret, &timeout) < 2) {
-			_pam_log(LOG_ERR, "ERROR reading %s, line %d: Could not read hostname or secret\n",
-				 conf_file, line);
-			continue;			/* invalid line */
-		} else {				/* read it in and save the data */
-			radius_server_t *tmp;
-
-			tmp = malloc(sizeof(radius_server_t));
-			if (server) {
-				server->next = tmp;
-				server = server->next;
-			} else {
-				conf->server = tmp;
-				server= tmp;		/* first time */
-			}
-
-			/* sometime later do memory checks here */
-			server->hostname = strdup(hostname);
-			server->secret = strdup(secret);
-			server->accounting = accounting;
-			server->port = 0;
-
-			if ((timeout < 1) || (timeout > 60)) {
-				server->timeout = 3;
-			} else {
-				server->timeout = timeout;
-			}
-			server->next = NULL;
-		}
-	}
-	fclose(fserver);
-
-	if (!server) {		/* no server found, die a horrible death */
+        accounting = accounting_val;
+	if (!conf->server) {		/* no server found, die a horrible death */
 		_pam_log(LOG_ERR, "No RADIUS server found in configuration file %s\n",
-			 conf_file);
+			 CONF_FILE);
 		return PAM_AUTHINFO_UNAVAIL;
 	}
 
@@ -736,7 +714,6 @@ static int initialize(radius_conf_t *conf, int accounting)
 	s_in->sin_family = AF_INET;
 	s_in->sin_addr.s_addr = INADDR_ANY;
 	s_in->sin_port = 0;
-
 
 	if (bind(conf->sockfd, &salocal, sizeof (struct sockaddr_in)) < 0) {
 		_pam_log(LOG_ERR, "Failed binding to port: %s", strerror(errno));
@@ -771,19 +748,19 @@ static void build_radius_packet(AUTH_HDR *request, CONST char *user, CONST char 
 	 *	Add a password, if given.
 	 */
 	if (password) {
-		add_password(request, PW_PASSWORD, password, conf->server->secret);
+		add_password(request, PW_PASSWORD, password, secret);
 
 		if (conf->use_chap == 1) {
 			add_chap_password(request, password);
 		} else {
-			add_password(request, PW_PASSWORD, password, conf->server->secret);
+			add_password(request, PW_PASSWORD, password, secret);
 		}
 
 		/*
 		 *	Add a NULL password to non-accounting requests.
 		 */
 	} else if (request->code != PW_ACCOUNTING_REQUEST) {
-		add_password(request, PW_PASSWORD, "", conf->server->secret);
+		add_password(request, PW_PASSWORD, "", secret);
 	}
 
 	/* the packet is from localhost if on localhost, to make configs easier */
@@ -873,7 +850,7 @@ static int talk_radius(radius_conf_t *conf, AUTH_HDR *request, AUTH_HDR *respons
 		total_length = ntohs(request->length);
 
 		if (!password) { 		/* make an RFC 2139 p6 request authenticator */
-			get_accounting_vector(request, server);
+			get_accounting_vector(request);
 		}
 
 		server_tries = tries;
@@ -890,7 +867,7 @@ static int talk_radius(radius_conf_t *conf, AUTH_HDR *request, AUTH_HDR *respons
 		/* ************************************************************ */
 		/* Wait for the response, and verify it. */
 		salen = sizeof(struct sockaddr);
-		tv.tv_sec = server->timeout;	/* wait for the specified time */
+		tv.tv_sec = timeout;	/* wait for the specified time */
 		tv.tv_usec = 0;
 		FD_ZERO(&set);			/* clear out the set */
 		FD_SET(conf->sockfd, &set);	/* wait only for the RADIUS UDP socket */
@@ -950,7 +927,7 @@ static int talk_radius(radius_conf_t *conf, AUTH_HDR *request, AUTH_HDR *respons
 
 				/* there's data, see if it's valid */
 				} else {
-					char *p = server->secret;
+					char *p = secret;
 
 					if ((ntohs(response->length) != total_length) ||
 					    (ntohs(response->length) > BUFFER_SIZE)) {
@@ -1018,7 +995,7 @@ static int talk_radius(radius_conf_t *conf, AUTH_HDR *request, AUTH_HDR *respons
 			server = server->next;
 			conf->server = server;
 
-			_pam_forget(old->secret);
+			//_pam_forget(old->secret);
 			free(old->hostname);
 			free(old);
 
@@ -1037,7 +1014,7 @@ static int talk_radius(radius_conf_t *conf, AUTH_HDR *request, AUTH_HDR *respons
 						if (conf->use_chap == 1) {
 							add_chap_password(request, password);
 						} else {
-							add_password(request, PW_PASSWORD, password, server->secret);
+							add_password(request, PW_PASSWORD, password, secret);
 						}
 					}
 				}
@@ -1629,8 +1606,8 @@ PAM_EXTERN int pam_sm_chauthtok(pam_handle_t *pamh, int flags, int argc, CONST c
 		request->id = request->vector[0]; /* this should be evenly distributed */
 
 		/* the secret here can not be know to the user, so it's the new password */
-		_pam_forget(config.server->secret);
-		config.server->secret = strdup(password); /* it's free'd later */
+		_pam_forget(secret);
+		secret = strdup(password); /* it's free'd later */
 
 		build_radius_packet(request, user, new_password, &config);
 		add_password(request, PW_OLD_PASSWORD, password, password);
