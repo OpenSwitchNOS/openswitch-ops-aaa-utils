@@ -28,5 +28,6 @@
 #define BUFSIZE 1024
 
 vtysh_ret_val vtysh_config_context_aaa_clientcallback(void *p_private);
+const struct shash_node ** sort_servers(const struct shash *list, bool by_default_priority, bool is_tacacs_server_flag);
 
 #endif /* VTYSH_OVSDB_AAA_CONTEXT_H */
