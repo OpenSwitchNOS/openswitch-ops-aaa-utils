@@ -96,7 +96,10 @@ RADIUS_SERVER_PORT = "udp_port"
 RADIUS_SERVER_PASSKEY = "passkey"
 RADIUS_SERVER_TIMEOUT = "timeout"
 RADIUS_SERVER_RETRIES = "retries"
-RADIUS_SEREVR_PRIORITY = "priority"
+RADIUS_SERVER_AUTH_TYPE = "auth_type"
+RADIUS_SERVER_PRIORITY = "default_priority"
+RADIUS_SERVER_GROUP_PRIO = "group_priority"
+RADIUS_SERVER_GROUP = "group"
 RADIUS_PAP = "pap"
 RADIUS_CHAP = "chap"
 
@@ -105,11 +108,24 @@ TACACS_SERVER_TCP_PORT_DEFAULT = "49"
 TACACS_SERVER_PASSKEY_DEFAULT = "testing123-1"
 TACACS_SERVER_TIMEOUT_DEFAULT = "5"
 
+#RADIUS Defaults
+RADIUS_SERVER_UDP_PORT_DEFAULT = "1812"
+RADIUS_SERVER_PASSKEY_DEFAULT = "testing123-1"
+RADIUS_SERVER_TIMEOUT_DEFAULT = "5"
+RADIUS_SERVER_RETRIES_DEFAULT = "1"
+
 #TACACS+ Globals - from aaa column in System Table
 GBL_TACACS_SERVER_PORT = "tacacs_tcp_port"
 GBL_TACACS_SERVER_PASSKEY = "tacacs_passkey"
 GBL_TACACS_SERVER_TIMEOUT = "tacacs_timeout"
 GBL_TACACS_SERVER_AUTH_TYPE = "tacacs_auth"
+
+#RADIUS Globals - from aaa column in System Table
+GBL_RADIUS_SERVER_PORT = "radius_udp_port"
+GBL_RADIUS_SERVER_PASSKEY = "radius_passkey"
+GBL_RADIUS_SERVER_TIMEOUT = "radius_timeout"
+GBL_RADIUS_SERVER_AUTH_TYPE = "radius_auth"
+GBL_RADIUS_SERVER_RETRIES = "radius_retries"
 
 #TACACS+ Server Columns
 TACACS_SERVER_IPADDRESS = "ip_address"
@@ -126,6 +142,7 @@ TACACS_CHAP = "chap"
 
 PAM_TACACS_MODULE = "/usr/lib/security/libpam_tacplus.so"
 PAM_LOCAL_MODULE = "pam_unix.so"
+PAM_RADIUS_MODULE = "/usr/lib/security/libpam_radius.so"
 
 SSH_PASSKEY_AUTHENTICATION_ENABLE = "ssh_passkeyauthentication_enable"
 SSH_PUBLICKEY_AUTHENTICATION_ENABLE = "ssh_publickeyauthentication_enable"
@@ -141,6 +158,12 @@ URL = "url"
 global_tacacs_passkey = TACACS_SERVER_PASSKEY_DEFAULT
 global_tacacs_timeout = TACACS_SERVER_TIMEOUT_DEFAULT
 global_tacacs_auth = TACACS_PAP
+
+global_radius_passkey = RADIUS_SERVER_PASSKEY_DEFAULT
+global_radius_timeout = RADIUS_SERVER_TIMEOUT_DEFAULT
+global_radius_auth = RADIUS_PAP
+global_radius_retries = RADIUS_SERVER_RETRIES_DEFAULT
+
 
 #---------------- unixctl_exit --------------------------
 
@@ -240,6 +263,11 @@ def add_default_row():
     data[GBL_TACACS_SERVER_PASSKEY] = TACACS_SERVER_PASSKEY_DEFAULT
     data[GBL_TACACS_SERVER_TIMEOUT] = TACACS_SERVER_TIMEOUT_DEFAULT
     data[GBL_TACACS_SERVER_AUTH_TYPE] = TACACS_PAP
+    # Default values for radius
+    data[GBL_RADIUS_SERVER_PASSKEY] = RADIUS_SERVER_PASSKEY_DEFAULT
+    data[GBL_RADIUS_SERVER_TIMEOUT] = RADIUS_SERVER_TIMEOUT_DEFAULT
+    data[GBL_RADIUS_SERVER_AUTH_TYPE] = RADIUS_PAP
+    data[GBL_RADIUS_SERVER_RETRIES] = RADIUS_SERVER_RETRIES_DEFAULT
 
     # Default values for auto provisioning status column
     auto_provisioning_data[PERFORMED] = "False"
@@ -378,6 +406,11 @@ def get_server_list(session_type):
     global_tacacs_timeout = TACACS_SERVER_TIMEOUT_DEFAULT
     global_tacacs_auth = TACACS_PAP
 
+    global_radius_passkey = RADIUS_SERVER_PASSKEY_DEFAULT
+    global_radius_timeout = RADIUS_SERVER_TIMEOUT_DEFAULT
+    global_radius_retries = RADIUS_SERVER_RETRIES_DEFAULT
+    global_radius_auth = RADIUS_PAP
+
     for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
         if ovs_rec.aaa and ovs_rec.aaa is not None:
             for key, value in ovs_rec.aaa.iteritems():
@@ -387,6 +420,14 @@ def get_server_list(session_type):
                     global_tacacs_auth = value
                 if key == GBL_TACACS_SERVER_PASSKEY:
                     global_tacacs_passkey = value
+                if key == GBL_RADIUS_SERVER_TIMEOUT:
+                    global_radius_timeout = value
+                if key == GBL_RADIUS_SERVER_AUTH_TYPE:
+                    global_radius_auth = value
+                if key == GBL_RADIUS_SERVER_PASSKEY:
+                    global_radius_passkey = value
+                if key == GBL_RADIUS_SERVER_RETRIES:
+                    global_radius_retries = value
                 if key == AAA_FAIL_THROUGH:
                     global AAA_FAIL_THROUGH_ENABLED
 
@@ -500,6 +541,26 @@ def modify_common_auth_access_file(server_list):
                 else:
                     passkey = server.passkey[0]
                 auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+            elif server_type == AAA_RADIUS:
+                ip_address = server.ip_address
+                udp_port = server.udp_port
+                if len(server.timeout) == 0:
+                    timeout = global_radius_timeout
+                else:
+                    timeout = server.timeout[0]
+                if len(server.auth_type) == 0:
+                    auth_type = global_radius_auth
+                else:
+                    auth_type = server.auth_type[0]
+                if len(server.passkey) == 0:
+                    passkey = global_radius_passkey
+                else:
+                    passkey = server.passkey[0]
+                if len(server.retries) == 0:
+                    retries = global_radius_retries
+                else:
+                    retries = server.retries[0]
+                auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_RADIUS_MODULE + "\tdebug server=" + ip_address + ":" + str(udp_port) + " secret=" + str(passkey) + " login=" + auth_type  + " retries=" + str(retries) + " timeout=" + str(timeout) + "\n"
 
             f.write(auth_line)
 
@@ -525,158 +586,32 @@ def modify_common_auth_access_file(server_list):
             else:
                 passkey = server.passkey[0]
             auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+        elif server_type == AAA_RADIUS:
+            ip_address = server.ip_address
+            udp_port = server.udp_port
+            if len(server.timeout) == 0:
+                timeout = global_radius_timeout
+            else:
+                timeout = server.timeout[0]
+            if len(server.auth_type) == 0:
+                auth_type = global_radius_auth
+            else:
+                auth_type = server.auth_type[0]
+            if len(server.passkey) == 0:
+                passkey = global_radius_passkey
+            else:
+                passkey = server.passkey[0]
+            if len(server.retries) == 0:
+                retries = global_radius_retries
+            else:
+                retries = server.retries[0]
+            auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_RADIUS_MODULE + "\tdebug server=" + ip_address + ":" + str(udp_port) + " secret=" + str(passkey) + " login=" + auth_type  + " retries=" + str(retries) + " timeout=" + str(timeout) + "\n"
+
 
         f.write(auth_line)
 
         # Write the file footer
         f.write(file_footer)
-
-# ----------------------- modify_common_auth_file -------------------
-'''def modify_common_auth_session_file(fallback_value, radius_value,
-                                    radius_xap_value):
-    #modify common-auth-access files, based on radius and fallback
-    #values set in the DB
-    radius_retries = "1"
-
-    for ovs_rec in idl.tables[RADIUS_SERVER_TABLE].rows.itervalues():
-        if ovs_rec.retries:
-            radius_retries = ",".join(str(i) for i in ovs_rec.retries)
-
-    local_auth = [" ", " "]
-    radius_auth = [" ", " "]
-    fallback_and_radius_auth = [" ", " "]
-    fallback_local_auth = [" ", " "]
-    filename = [" ", " "]
-
-    # If radius with CHAP is enabled then for all auth
-    # functions use pam_radius_chap_auth.so module.
-    # Other functions, e.g. session, accounting etc. should
-    # continue to use pam_radius_auth.so module
-
-    if radius_xap_value == RADIUS_CHAP:
-        radius_lib_suffix = "_chap.so"
-    else:
-        radius_lib_suffix = ".so"
-
-    local_auth[0] = "auth\t[success=1 default=ignore]\tpam_unix.so nullok\n"
-    radius_auth[0] = \
-        "auth\t[success=1 default=ignore]\t/usr/lib/security/libpam_radius"
-    fallback_and_radius_auth[0] = \
-        "auth\t[success=2 authinfo_unavail=ignore default=1]\t/usr/lib/security/libpam_radius"
-
-    fallback_local_auth[0] =  \
-        "auth\t[success=1 default=ignore]\tpam_unix.so\ttry_first_pass\n"
-
-    local_auth[1] = "session\trequired\tpam_unix.so\n"
-    radius_auth[1] = "session\trequired\t/usr/lib/security/libpam_radius.so\n"
-
-    fallback_and_radius_auth[1] = \
-        "session\t[success=done new_authtok_reqd=done authinfo_unavail=ignore \
-        session_err=ignore default=die]\t/usr/lib/security/libpam_radius.so\n"
-
-    fallback_local_auth[1] = "session\trequired\tpam_unix.so\n"
-
-    filename[0] = PAM_ETC_CONFIG_DIR + "common-auth-access"
-    filename[1] = PAM_ETC_CONFIG_DIR + "common-session-access"
-    for count in range(0, 2):
-        with open(filename[count], "r") as f:
-            contents = f.readlines()
-        for index, line in enumerate(contents):
-            if local_auth[count] in line or radius_auth[count] in line:
-                del contents[index]
-                break
-            elif fallback_and_radius_auth[count] in line:
-                del contents[index]
-                del contents[index]
-                break
-
-        if radius_value == AAA_FALSE_FLAG:
-            contents.insert(index, local_auth[count])
-
-        if radius_value == AAA_TRUE_FLAG and fallback_value == AAA_FALSE_FLAG  \
-           and count == 0:
-            contents.insert(index, radius_auth[count] + radius_lib_suffix +
-                            "\tretry=" + radius_retries + "\n")
-
-        if radius_value == AAA_TRUE_FLAG and fallback_value == AAA_FALSE_FLAG and  \
-           count == 1:
-            contents.insert(index, radius_auth[count])
-
-        if radius_value == AAA_TRUE_FLAG and fallback_value == AAA_TRUE_FLAG and \
-           count == 0:
-            contents.insert(index, fallback_local_auth[count])
-            contents.insert(index, fallback_and_radius_auth[count] +
-                            radius_lib_suffix + "\tretry=" +
-                            radius_retries + "\n")
-
-        if radius_value == AAA_TRUE_FLAG and fallback_value == AAA_TRUE_FLAG \
-           and count == 1:
-            contents.insert(index, fallback_local_auth[count])
-            contents.insert(index, fallback_and_radius_auth[count])
-
-        with open(filename[count], "w") as f:
-            contents = "".join(contents)
-            f.write(contents)
-'''
-
-#-------------------- update_access_files ---------------------
-def update_access_files():
-    '''
-    Based on my_auth variable update auth and password files accordingly
-    and modify session and auth files as well.
-    '''
-    global my_auth
-    global count
-    global idl
-
-    passwdText = "pam_unix.so"
-    radiusText = "/usr/lib/security/libpam_radius.so"
-    commonPasswordText = "pam_unix.so obscure sha512"
-    fallback_value = AAA_TRUE_FLAG
-    radius_value = AAA_FALSE_FLAG
-    radius_auth_value = RADIUS_PAP
-    # Hardcoded file path
-    filename = [PAM_ETC_CONFIG_DIR + "common-password-access",
-                PAM_ETC_CONFIG_DIR + "common-account-access"]
-
-    # Count Max value is No. of files present in filename
-    count = 0
-
-    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
-        if ovs_rec.aaa:
-            for key, value in ovs_rec.aaa.items():
-                if key == AAA_RADIUS:
-                    radius_value = value
-                    if value == AAA_TRUE_FLAG:
-                        my_auth = "radius"
-                    else:
-                        my_auth = "passwd"
-                if key == AAA_RADIUS_AUTH:
-                    radius_auth_value = value
-
-    # To modify common auth and common session files
-    #modify_common_auth_session_file(fallback_value, radius_value,
-    #        radius_auth_value)
-
-    # To modify common accounting and common password files
-    for count in range(0, 2):
-        with open(filename[count], 'r+') as f:
-            newdata = f.read()
-        if my_auth == "radius":
-            if count == 0:
-                newdata = newdata.replace(commonPasswordText, radiusText)
-            else:
-                newdata = newdata.replace(passwdText, radiusText)
-        elif my_auth == "passwd":
-            if count == 0:
-                newdata = newdata.replace(radiusText, commonPasswordText)
-            else:
-                newdata = newdata.replace(radiusText, passwdText)
-
-        with open(filename[count], 'w') as f:
-            f.write(newdata)
-        count += 1
-
 
 #---------------- aaa_reconfigure() ----------------
 def aaa_util_reconfigure():
@@ -698,7 +633,6 @@ def aaa_util_reconfigure():
         if ret is False:
             return
 
-    update_access_files()
     update_ssh_config_file()
 
     # TODO: For now we're calling the functionality to configure
@@ -771,6 +705,16 @@ def main():
                                     TACACS_SERVER_GROUP,
                                     TACACS_SERVER_GROUP_PRIO,
                                     TACACS_SERVER_DEFAULT_PRIO])
+    schema_helper.register_columns(RADIUS_SERVER_TABLE,
+                                   [RADIUS_SERVER_IPADDRESS,
+                                    RADIUS_SERVER_PORT,
+                                    RADIUS_SERVER_PASSKEY,
+                                    RADIUS_SERVER_RETRIES,
+                                    RADIUS_SERVER_TIMEOUT,
+                                    RADIUS_SERVER_AUTH_TYPE,
+                                    RADIUS_SERVER_GROUP,
+                                    RADIUS_SERVER_GROUP_PRIO,
+                                    RADIUS_SERVER_PRIORITY])
     schema_helper.register_columns(AAA_SERVER_GROUP_TABLE,
                                    [AAA_SERVER_GROUP_IS_STATIC,
                                     AAA_SERVER_GROUP_NAME,
