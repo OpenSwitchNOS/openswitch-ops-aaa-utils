@@ -112,12 +112,45 @@ compare_nodes_by_tacacs_server_group_priority (const void *a, const void *b)
     return (server_a->group_priority - server_b->group_priority);
 }
 
+/* Utility functions for radius server display*/
+
+/* qsort comparator function: default_priority*/
+int
+compare_nodes_by_radius_server_default_priority (const void *a, const void *b)
+{
+    const struct shash_node *const *node_a = a;
+    const struct shash_node *const *node_b = b;
+    const struct ovsrec_radius_server *server_a =
+                      (const struct ovsrec_radius_server *)(*node_a)->data;
+    const struct ovsrec_radius_server *server_b =
+                      (const struct ovsrec_radius_server *)(*node_b)->data;
+
+    return (server_a->default_priority - server_b->default_priority);
+}
+
+
+/* qsort comparator function: group_priority*/
+/*
+int
+compare_nodes_by_radius_server_group_priority (const void *a, const void *b)
+{
+    const struct shash_node *const *node_a = a;
+    const struct shash_node *const *node_b = b;
+    const struct ovsrec_radius_server *server_a =
+                      (const struct ovsrec_radius_server *)(*node_a)->data;
+    const struct ovsrec_radius_server *server_b =
+                      (const struct ovsrec_radius_server *)(*node_b)->data;
+
+    return (server_a->group_priority - server_b->group_priority);
+}
+*/
+
 /*
  * Sorting function for tacacs servers
  * on success, returns sorted tacacs server list.
  */
 const struct shash_node **
-sort_tacacs_server(const struct shash *list, bool by_default_priority)
+sort_servers(const struct shash *list, bool by_default_priority, bool is_tacacs_server_flag)
 {
     if (shash_is_empty(list))
     {
@@ -137,10 +170,19 @@ sort_tacacs_server(const struct shash *list, bool by_default_priority)
         SHASH_FOR_EACH (node, list) {
             nodes[iter++] = node;
         }
-        if (by_default_priority)
-            qsort(nodes, count, sizeof(*nodes), compare_nodes_by_tacacs_server_default_priority);
-        else
+
+        if (by_default_priority) {
+            if (is_tacacs_server_flag) {
+                qsort(nodes, count, sizeof(*nodes), compare_nodes_by_tacacs_server_default_priority);
+            } else {
+
+                qsort(nodes, count, sizeof(*nodes), compare_nodes_by_radius_server_default_priority);
+            }
+        }
+        else {
             qsort(nodes, count, sizeof(*nodes), compare_nodes_by_tacacs_server_group_priority);
+        }
+
         return nodes;
     }
 }
@@ -175,7 +217,7 @@ vtysh_display_tacacs_server_table(vtysh_ovsdb_cbmsg *p_msg)
       shash_add(&sorted_tacacs_servers, row->ip_address, (void *)row);
   }
 
-  nodes = sort_tacacs_server(&sorted_tacacs_servers, sort_by_default_priority);
+  nodes = sort_servers(&sorted_tacacs_servers, sort_by_default_priority, false);
   if (nodes == NULL)
   {
      shash_destroy(&sorted_tacacs_servers);
@@ -385,7 +427,7 @@ vtysh_display_aaa_server_group_table(vtysh_ovsdb_cbmsg *p_msg)
       shash_add(&sorted_tacacs_servers, server_row->ip_address, (void *)server_row);
   }
 
-  nodes = sort_tacacs_server(&sorted_tacacs_servers, by_default_priority);
+  nodes = sort_servers(&sorted_tacacs_servers, by_default_priority, false);
   count = shash_count(&sorted_tacacs_servers);
 
   OVSREC_AAA_SERVER_GROUP_FOR_EACH(group_row, p_msg->idl)
