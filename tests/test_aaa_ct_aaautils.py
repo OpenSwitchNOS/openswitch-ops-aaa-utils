@@ -596,20 +596,26 @@ class Test_aaafeature:
     def test_loginSSHlocal(self):
         self.test.loginSSHlocal()
 
+@mark.skipif(True, reason="Disabling as AAA feature revamp in progress")
     def test_loginSSHradius(self):
         self.test.loginSSHradius()
 
+@mark.skipif(True, reason="Disabling as AAA feature revamp in progress")
     def test_loginSSHradiusWithLocalPassword(self):
         self.test.loginSSHradiusWithLocalPassword()
 
+@mark.skipif(True, reason="Disabling as AAA feature revamp in progress")
     def test_loginSSHradiusWithFallback(self):
         self.test.loginSSHradiusWithFallback()
 
+@mark.skipif(True, reason="Disabling as AAA feature revamp in progress")
     def test_loginSSHlocalWrongPassword(self):
         self.test.loginSSHlocalWrongPassword()
 
+@mark.skipif(True, reason="Disabling as AAA feature revamp in progress")
     def test_loginSSHlocalAgain(self):
         self.test.loginSSHlocalAgain()
 
+@mark.skipif(True, reason="Disabling as AAA feature revamp in progress")
     def test_loginSSHradiusWithSecondaryServer(self):
         self.test.loginSSHradiusWithSecondaryServer()
