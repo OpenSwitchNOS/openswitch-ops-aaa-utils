@@ -23,6 +23,7 @@ OpenSwitch Test for RADIUS Authentication.
 from time import sleep
 from pytest import mark
 import pexpect
+from pdb import set_trace
 
 TOPOLOGY = """
 # +--------+         +--------+
@@ -267,6 +268,8 @@ def verify_login_success(step, user, password, login_type, is_ipv6):
     myssh = ssh_client + " " + user + "@" + switch_ip
     p = pexpect.spawn(myssh)
     index = p.expect([SSH_NEWKEY_HELP_STR, "password:", pexpect.EOF, pexpect.TIMEOUT])
+
+    set_trace()
 
     if index == 0:
         p.sendline("yes")

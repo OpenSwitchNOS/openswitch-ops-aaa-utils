@@ -22,6 +22,7 @@ OpenSwitch Test for TACACS+ Authentication.
 
 from time import sleep
 from pytest import mark
+from pdb import set_trace
 import pexpect
 
 TOPOLOGY = """
@@ -233,6 +234,8 @@ def verify_login_success(step, user, password, login_type, is_ipv6):
     s1("echo $SHELL", shell="bash")
     myssh = ssh_client + " " + user + "@" + switch_ip
     p = pexpect.spawn(myssh)
+
+    set_trace()
     index = p.expect([SSH_NEWKEY_HELP_STR, "password:", pexpect.EOF, pexpect.TIMEOUT])
 
     if index == 0:
@@ -500,6 +503,7 @@ def login_ssh_tacacs(step):
     step("####### Test SSH login with TACACS+ authentication start #######")
     show_switch_config(step)
     step("#### verify login success with remote user ####")
+    set_trace()
     verify_login_success(step, USER_1, USER_1_PASSWD, REMOTE_AUTH, is_ipv6)
     show_tacacs_log(step, 0)
     step("#### verify login failure with incorrect password ####")
