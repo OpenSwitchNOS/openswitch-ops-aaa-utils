@@ -65,7 +65,6 @@ SYSTEM_AUTO_PROVISIONING_STATUS_COLUMN = "auto_provisioning_status"
 
 AAA_RADIUS = "radius"
 AAA_RADIUS_AUTH = "radius_auth"
-AAA_FALLBACK = "fallback"
 OPS_TRUE = "true"
 OPS_FALSE = "false"
 
@@ -172,7 +171,6 @@ def add_default_row():
     auto_provisioning_data = {}
 
     # Default values for aaa column
-    data[AAA_FALLBACK] = OPS_TRUE
     data[AAA_RADIUS] = OPS_FALSE
     data[AAA_RADIUS_AUTH] = RADIUS_PAP
     data[SSH_PASSKEY_AUTHENTICATION_ENABLE] = AUTH_KEY_ENABLE
@@ -212,49 +210,6 @@ def check_for_row_initialization():
         if not ovs_rec.aaa:
             add_default_row()
     return True
-
-
-# ---------------- update_server_file -----------------
-def update_server_file():
-    '''
-    Based on ovsdb radius server table entries
-    update radius client file accordingly
-    '''
-    global idl
-
-    insert_server_info = ["" for x in range(64)]
-    radius_ip = 0
-    priority = 0
-    radius_port = 0
-    radius_passkey = 0
-    radius_timeout = 0
-    row_count = 0
-    for ovs_rec in idl.tables[RADIUS_SERVER_TABLE].rows.itervalues():
-        if ovs_rec.ip_address:
-            radius_ip = ovs_rec.ip_address
-        if ovs_rec.udp_port:
-            radius_port = ",".join(str(i) for i in ovs_rec.udp_port)
-        if ovs_rec.passkey:
-            radius_passkey = "".join(ovs_rec.passkey)
-        if ovs_rec.timeout:
-            radius_timeout = ",".join(str(i) for i in ovs_rec.timeout)
-        if ovs_rec.priority:
-            priority = ovs_rec.priority - 1
-
-        insert_server_info[priority] = radius_ip + ":" + radius_port + " " + \
-            radius_passkey + " " + radius_timeout
-        row_count += 1
-
-    with open(RADIUS_CLIENT, "w+") as f:
-        f.write("\n".join(insert_server_info[count] for count in range(0,
-                                                           row_count)))
-
-    radius_passkey = 0
-
-    radius_passkey = 0
-
-    return
-
 
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
@@ -319,158 +274,6 @@ def update_ssh_config_file():
         contents = "".join(contents)
         f.write(contents)
 
-
-# ----------------------- modify_common_auth_file -------------------
-def modify_common_auth_session_file(fallback_value, radius_value,
-                                    radius_xap_value):
-    '''
-    modify common-auth-access files, based on radius and fallback
-    values set in the DB
-    '''
-    radius_retries = "1"
-
-    for ovs_rec in idl.tables[RADIUS_SERVER_TABLE].rows.itervalues():
-        if ovs_rec.retries:
-            radius_retries = ",".join(str(i) for i in ovs_rec.retries)
-
-    local_auth = [" ", " "]
-    radius_auth = [" ", " "]
-    fallback_and_radius_auth = [" ", " "]
-    fallback_local_auth = [" ", " "]
-    filename = [" ", " "]
-
-    # If radius with CHAP is enabled then for all auth
-    # functions use pam_radius_chap_auth.so module.
-    # Other functions, e.g. session, accounting etc. should
-    # continue to use pam_radius_auth.so module
-
-    if radius_xap_value == RADIUS_CHAP:
-        radius_lib_suffix = "chap_auth.so"
-    else:
-        radius_lib_suffix = "auth.so"
-
-    local_auth[0] = "auth\t[success=1 default=ignore]\tpam_unix.so nullok\n"
-    radius_auth[0] = \
-        "auth\t[success=1 default=ignore]\tpam_radius_"
-    fallback_and_radius_auth[0] = \
-        "auth\t[success=2 authinfo_unavail=ignore default=1]\tpam_radius_"
-
-    fallback_local_auth[0] =  \
-        "auth\t[success=1 default=ignore]\tpam_unix.so\ttry_first_pass\n"
-
-    local_auth[1] = "session\trequired\tpam_unix.so\n"
-    radius_auth[1] = "session\trequired\tpam_radius_auth.so\n"
-
-    fallback_and_radius_auth[1] = \
-        "session\t[success=done new_authtok_reqd=done authinfo_unavail=ignore \
-        session_err=ignore default=die]\tpam_radius_auth.so\n"
-
-    fallback_local_auth[1] = "session\trequired\tpam_unix.so\n"
-
-    filename[0] = PAM_ETC_CONFIG_DIR + "common-auth-access"
-    filename[1] = PAM_ETC_CONFIG_DIR + "common-session-access"
-    for count in range(0, 2):
-        with open(filename[count], "r") as f:
-            contents = f.readlines()
-        for index, line in enumerate(contents):
-            if local_auth[count] in line or radius_auth[count] in line:
-                del contents[index]
-                break
-            elif fallback_and_radius_auth[count] in line:
-                del contents[index]
-                del contents[index]
-                break
-
-        if radius_value == OPS_FALSE:
-            contents.insert(index, local_auth[count])
-
-        if radius_value == OPS_TRUE and fallback_value == OPS_FALSE  \
-           and count == 0:
-            contents.insert(index, radius_auth[count] + radius_lib_suffix +
-                            "\tretry=" + radius_retries + "\n")
-
-        if radius_value == OPS_TRUE and fallback_value == OPS_FALSE and  \
-           count == 1:
-            contents.insert(index, radius_auth[count])
-
-        if radius_value == OPS_TRUE and fallback_value == OPS_TRUE and \
-           count == 0:
-            contents.insert(index, fallback_local_auth[count])
-            contents.insert(index, fallback_and_radius_auth[count] +
-                            radius_lib_suffix + "\tretry=" +
-                            radius_retries + "\n")
-
-        if radius_value == OPS_TRUE and fallback_value == OPS_TRUE \
-           and count == 1:
-            contents.insert(index, fallback_local_auth[count])
-            contents.insert(index, fallback_and_radius_auth[count])
-
-        with open(filename[count], "w") as f:
-            contents = "".join(contents)
-            f.write(contents)
-
-
-#-------------------- update_access_files ---------------------
-def update_access_files():
-    '''
-    Based on my_auth variable update auth and password files accordingly
-    and modify session and auth files as well.
-    '''
-    global my_auth
-    global count
-    global idl
-
-    passwdText = "pam_unix.so"
-    radiusText = "pam_radius_auth.so"
-    commonPasswordText = "pam_unix.so obscure sha512"
-    fallback_value = OPS_TRUE
-    radius_value = OPS_FALSE
-    radius_auth_value = RADIUS_PAP
-    # Hardcoded file path
-    filename = [PAM_ETC_CONFIG_DIR + "common-password-access",
-                PAM_ETC_CONFIG_DIR + "common-account-access"]
-
-    # Count Max value is No. of files present in filename
-    count = 0
-
-    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
-        if ovs_rec.aaa:
-            for key, value in ovs_rec.aaa.items():
-                if key == AAA_FALLBACK:
-                    fallback_value = value
-                if key == AAA_RADIUS:
-                    radius_value = value
-                    if value == OPS_TRUE:
-                        my_auth = "radius"
-                    else:
-                        my_auth = "passwd"
-                if key == AAA_RADIUS_AUTH:
-                    radius_auth_value = value
-
-    # To modify common auth and common session files
-    modify_common_auth_session_file(fallback_value, radius_value,
-                                    radius_auth_value)
-
-    # To modify common accounting and common password files
-    for count in range(0, 2):
-        with open(filename[count], 'r+') as f:
-            newdata = f.read()
-        if my_auth == "radius":
-            if count == 0:
-                newdata = newdata.replace(commonPasswordText, radiusText)
-            else:
-                newdata = newdata.replace(passwdText, radiusText)
-        elif my_auth == "passwd":
-            if count == 0:
-                newdata = newdata.replace(radiusText, commonPasswordText)
-            else:
-                newdata = newdata.replace(radiusText, passwdText)
-
-        with open(filename[count], 'w') as f:
-            f.write(newdata)
-        count += 1
-
-
 #---------------- aaa_reconfigure() ----------------
 def aaa_util_reconfigure():
     '''
@@ -491,8 +294,6 @@ def aaa_util_reconfigure():
         if ret is False:
             return
 
-    update_server_file()
-    update_access_files()
     update_ssh_config_file()
 
     return
@@ -549,13 +350,6 @@ def main():
 
     schema_helper.register_columns(SYSTEM_TABLE,
                                    [SYSTEM_RADIUS_SERVER_COLUMN])
-    schema_helper.register_columns(RADIUS_SERVER_TABLE,
-                                   [RADIUS_SERVER_IPADDRESS,
-                                    RADIUS_SERVER_PORT,
-                                    RADIUS_SERVER_PASSKEY,
-                                    RADIUS_SERVER_TIMEOUT,
-                                    RADIUS_SERVER_RETRIES,
-                                    RADIUS_SEREVR_PRIORITY])
 
     idl = ovs.db.idl.Idl(remote, schema_helper)
 

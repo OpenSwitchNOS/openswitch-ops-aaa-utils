@@ -15,6 +15,7 @@
 
 import pexpect
 from time import sleep
+from pytest import mark
 
 TOPOLOGY = """
 # +-------+                   +-------+
@@ -483,7 +484,7 @@ def loginsshradiuswithsecondaryserver(h1, h2, sw1):
               " primary radius server is not reachable ###\n")
         return True
 
-
+@mark.skipif(True, reason="Will be enabled once RADIUS enhancements are ready")
 def test_aaafeature(topology, step):
     sw1 = topology.get('sw1')
     h1 = topology.get('h1')

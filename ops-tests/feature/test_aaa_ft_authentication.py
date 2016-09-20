@@ -334,6 +334,7 @@ def loginsshradiuswithfallback(step):
 
 @mark.gate
 @mark.platform_incompatible(['ostl'])
+@mark.skipif(True, reason="Will be enabled once RADIUS enhancements are ready")
 def test_aaa_ft_authentication(topology, step):
     global switches, hosts
     ops1 = topology.get('ops1')
