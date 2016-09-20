@@ -40,6 +40,13 @@
 #define RADIUS_SERVER_DEFAULT_RETRIES         1
 #define RADIUS_SERVER_DEFAULT_TIMEOUT         5
 
+#define RETRIES_HELP_STR                      "Set the number of retries\n"
+#define RETRIES_RANGE_HELP_STR                "Retry range 0 to 5 (Default: 1)\n"
+#define RADIUS_SERVER_HELP_STR                "RADIUS server configuration\n"
+#define RADIUS_SERVER_HOST_HELP_STR           "Specify a RADIUS server\n"
+#define RADIUS_SERVER_NAME_HELP_STR           "RADIUS server IP address or hostname\n"
+#define SHOW_RADIUS_SERVER_HELP_STR           "Show RADIUS server configuration\n"
+
 #define AUTO_PROVISIONING_ENABLE              "enable"
 #define AUTO_PROVISIONING_DISABLE             "disable"
 
