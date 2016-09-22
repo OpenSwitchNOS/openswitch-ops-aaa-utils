@@ -371,9 +371,9 @@ def get_server_list(session_type):
 
     server_list = []
 
-    global_tacacs_passkey = TACACS_SERVER_PASSKEY_DEFAULT
-    global_tacacs_timeout = TACACS_SERVER_TIMEOUT_DEFAULT
-    global_tacacs_auth = TACACS_PAP
+    global global_tacacs_passkey
+    global global_tacacs_timeout
+    global global_tacacs_auth
 
     for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
         if ovs_rec.aaa and ovs_rec.aaa is not None:
