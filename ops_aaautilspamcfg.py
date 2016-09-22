@@ -370,7 +370,7 @@ def update_ssh_config_file():
 def get_server_list(session_type):
 
     server_list = []
-
+    global global_tacacs_passkey, global_tacacs_timeout, global_tacacs_auth
     global_tacacs_passkey = TACACS_SERVER_PASSKEY_DEFAULT
     global_tacacs_timeout = TACACS_SERVER_TIMEOUT_DEFAULT
     global_tacacs_auth = TACACS_PAP
