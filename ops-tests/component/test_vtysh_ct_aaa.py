@@ -21,6 +21,8 @@ OpenSwitch Test for switchd related configurations.
 """
 from pytest import mark
 
+from pytest import mark
+
 TOPOLOGY = """
 # +-------+
 # |  ops1 |
