@@ -301,7 +301,8 @@ def check_for_row_initialization():
     for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
         if not ovs_rec.aaa:
             add_default_row()
-    return True
+            return True
+    return False 
 
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
