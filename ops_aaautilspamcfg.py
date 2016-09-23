@@ -301,7 +301,6 @@ def check_for_row_initialization():
     for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
         if not ovs_rec.aaa:
             add_default_row()
-    return True
 
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
@@ -545,9 +544,8 @@ def aaa_util_reconfigure():
             return
 
     if default_row_initialized == 0:
-        ret = check_for_row_initialization()
-        if ret is False:
-            return
+        check_for_row_initialization()
+        default_row_initialized = 1
 
     update_ssh_config_file()
 
