@@ -43,6 +43,7 @@
 #include "smap.h"
 #include "openvswitch/vlog.h"
 #include "openswitch-idl.h"
+#include "vtysh/utils/tacacs_vtysh_utils.h"
 #include "vtysh/vtysh_ovsdb_if.h"
 #include "vtysh/vtysh_ovsdb_config.h"
 #include "vtysh/utils/ovsdb_vtysh_utils.h"
@@ -535,6 +536,68 @@ DEFUN_NO_FORM(cli_aaa_set_authorization,
               AAA_DEFAULT_AUTHOR_LINE_HELP_STR);
 
 static int
+show_privilege_level()
+{
+    struct passwd *pw;
+    pw = getpwuid( getuid());
+    char *priv_lvl = NULL;
+    gid_t    *groups = NULL;
+    int      ngroups = MAX_GROUPS_USED;
+    struct   group *g;
+    int itr = 0;
+    int result = 0;
+
+    priv_lvl = getenv(PRIV_LVL_ENV);
+
+    if (priv_lvl)
+    {
+        vty_out(vty,"Privilege level is %s.\n", priv_lvl);
+        return CMD_SUCCESS;
+    }
+    else
+    {
+        groups = (gid_t *) malloc(MAX_GROUPS_USED * sizeof(gid_t));
+        result = getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups);
+        if (result < 0)
+        {
+            vty_out(vty,"Failed to retrieve the privilege level.\n");
+            VLOG_DBG("Retrieving group list failed.");
+            free(groups);
+            return CMD_ERR_NOTHING_TODO;
+        }
+        for (itr = 0; itr < ngroups; itr++)
+        {
+            g = getgrgid(groups[itr]);
+            if (strncmp(g->gr_name, ROLE_ADMIN, MAX_ROLE_NAME_LEN) == 0)
+            {
+                vty_out(vty,"Privilege level is %s.\n", PRIV_LVL_ADMIN);
+                free(groups);
+                return CMD_SUCCESS;
+            }
+            else if (strncmp(g->gr_name, ROLE_NETOP, MAX_ROLE_NAME_LEN) == 0)
+            {
+                vty_out(vty,"Privilege level is %s.\n", PRIV_LVL_NETOP);
+                free(groups);
+                return CMD_SUCCESS;
+            }
+        }
+        vty_out(vty,"Failed to retrieve the privilege level.\n");
+        VLOG_DBG("User did not match to any of the user-groups on the switch.");
+        free(groups);
+        return CMD_ERR_NOTHING_TODO;
+    }
+}
+
+DEFUN(cli_show_privilege_level,
+      show_privilege_level_cmd,
+      "show privilege-level",
+      SHOW_STR
+      SHOW_PRIV_LVL_STR)
+{
+    return show_privilege_level();
+}
+
+static int
 show_aaa_server_groups(const char* group_type)
 {
     const struct ovsrec_aaa_server_group *group_row = NULL;
@@ -646,6 +709,7 @@ show_aaa_server_groups(const char* group_type)
     free(nodes);
     return CMD_SUCCESS;
 }
+
 
 DEFUN(cli_show_aaa_server_groups,
       show_aaa_server_groups_cmd,
@@ -1047,7 +1111,8 @@ tacacs_set_global_passkey(const char *passkey)
     /* validate the length of passkey */
     if (strlen(passkey) > MAX_LENGTH_TACACS_PASSKEY)
     {
-        vty_out(vty, "Length of passkey should be less than 64%s", VTY_NEWLINE);
+        vty_out(vty, "Length of passkey should be less than %d %s",
+                         MAX_LENGTH_TACACS_PASSKEY, VTY_NEWLINE);
         return CMD_ERR_NOTHING_TODO;
     }
 
@@ -1166,6 +1231,36 @@ tacacs_server_name_has_all_digits(const char *server_name)
     }
     return true;
 }
+<<<<<<< HEAD
+
+static const bool
+is_valid_ipv4_address(const char *server_ipv4_address)
+{
+    struct sockaddr_in sa;
+
+    int result = inet_pton(AF_INET, server_ipv4_address, &(sa.sin_addr));
+
+    if (result <= 0)
+       return false;
+
+    /* 0.0.0.0 - 0.255.255.255 are not valid host addresses */
+    if (*server_ipv4_address == '0')
+       return false;
+
+    if(!IS_VALID_IPV4(htonl(sa.sin_addr.s_addr)))
+        return false;
+
+    return true;
+}
+
+static const bool
+tacacs_is_valid_server_name(const char *server_name)
+{
+    if(!server_name) {
+       return false;
+    }
+
+=======
 
 static const bool
 is_valid_ipv4_address(const char *server_ipv4_address)
@@ -2142,6 +2237,8 @@ cli_post_init(void)
     install_element(ENABLE_NODE, &show_aaa_server_groups_cmd);
     install_element(ENABLE_NODE, &show_auto_provisioning_cmd);
     install_element(ENABLE_NODE, &show_ssh_auth_method_cmd);
+    install_element(VIEW_NODE, &show_privilege_level_cmd);
+    install_element(ENABLE_NODE, &show_privilege_level_cmd);
     install_element(CONFIG_NODE, &set_ssh_publickey_auth_cmd);
     install_element(CONFIG_NODE, &no_set_ssh_publickey_auth_cmd);
     install_element(CONFIG_NODE, &set_ssh_password_auth_cmd);
