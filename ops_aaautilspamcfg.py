@@ -24,6 +24,7 @@ import ovs.vlog
 import os
 
 import vrf_utils
+import source_interface_utils
 
 # Assign my_auth to default local config
 my_auth = "passwd"
@@ -150,6 +151,8 @@ global_tacacs_auth = TACACS_PAP
 tacacs_source_interface = None
 radius_source_interface = None
 
+tacacs_config_type = None
+radius_config_type = None
 
 #---------------- unixctl_exit --------------------------
 
@@ -317,35 +320,45 @@ def  get_source_interface(protocol):
     Get tacacs/radius source interface configuration
     '''
     global radius_source_interface
+    global radius_config_type
+
     global tacacs_source_interface
+    global tacacs_config_type
 
     if protocol == AAA_RADIUS:
-        radius_source_interface = vrf_utils.get_source_interface(idl, protocol)
-        vlog.info("radius_source_interface = %s\n" % (radius_source_interface))
+        radius_source_interface, radius_config_type = \
+            get_protocol_source(idl, protocol, \
+                vrf_utils.DEFAULT_VRF_NAME)
+        vlog.info("radius_source_interface = %s, radius_source_interface = %s\n" \
+            % (radius_source_interface, radius_config_type))
 
     if protocol == AAA_TACACS:
-        tacacs_source_interface = vrf_utils.get_source_interface(idl, protocol)
-        vlog.info("tacacs_source_interface = %s\n" % (tacacs_source_interface))
+        tacacs_source_interface, tacacs_config_type = \
+            get_protocol_source(idl, protocol, \
+                vrf_utils.DEFAULT_VRF_NAME)
+        vlog.info("tacacs_source_interface = %s, tacacs_config_type = %s \n" \
+            % (tacacs_source_interface, tacacs_config_type))
 
-def get_src_ip_dstn_ns(source_interface):
+def get_src_ip_dstn_ns(source_interface, config_type):
     '''
     Get source ip and destination namespace from source interface
     '''
+    source_ip = None
     dstn_ns = None
 
     mgmt_ip = vrf_utils.get_mgmt_ip(idl)
     vlog.info("mgmt_ip = %s\n" % (mgmt_ip))
 
     if source_interface is None:
-        return source_interface, dstn_ns
+        return source_ip, dstn_ns
 
-    if source_interface != mgmt_ip:
-        vrf_name = vrf_utils.get_vrf_name_from_ip(idl, source_interface)
-        vlog.info("vrf_name = %s\n" % (vrf_name))
+    if config_type == source_interface_utils.SOURCE_INTERFACE:
+        source_ip = get_ip_from_interface(idl, source_interface)
 
-        dstn_ns = vrf_utils.get_namespace_from_vrf(idl, vrf_name)
+    if source_ip != mgmt_ip:
+        dstn_ns = get_vrf_ns_from_name(idl, vrf_utils.DEFAULT_VRF_NAME)
 
-    return source_interface, dstn_ns
+    return source_ip, dstn_ns
 
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
@@ -484,11 +497,22 @@ def modify_common_auth_access_file(server_list):
     values set in the DB
     '''
     global tacacs_source_interface
-    src_ip = None
-    dstn_ns = None
+    global tacacs_config_type
+
+    global radius_source_interface
+    global radius_config_type
+
+    tacacs_src_ip = None
+    tacacs_dstn_ns = None
+
+    radius_src_ip = None
+    radius_dstn_ns = None
 
     if tacacs_source_interface is not None:
-        src_ip, dstn_ns = get_src_ip_dstn_ns(tacacs_source_interface)
+        tacacs_src_ip, tacacs_dstn_ns = get_src_ip_dstn_ns(tacacs_source_interface, tacacs_config_type)
+
+    if radius_source_interface is not None:
+        radius_src_ip, radius_dstn_ns = get_src_ip_dstn_ns(radius_source_interface, radius_config_type)
 
     vlog.info("##### tacacs_src_interface = %s, radius_src_interface = %s," \
         " src_ip = %s, dstn_ns = %s ########" \
@@ -557,7 +581,7 @@ def modify_common_auth_access_file(server_list):
                 if dstn_ns is not None:
                     auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
                         ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
-                        " dstn_namespace=" + dstn_ns +  " source_ip=" + str(src_ip) + " \n"
+                        " dstn_namespace=" + tacacs_dstn_ns +  " source_ip=" + str(tacacs_src_ip) + " \n"
                 else:
                     auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
                         ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
@@ -589,7 +613,7 @@ def modify_common_auth_access_file(server_list):
             if dstn_ns is not None:
                 auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
                     " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + \
-                    " dstn_namespace=" + dstn_ns +  " source_ip=" + str(src_ip) + " \n"
+                    " dstn_namespace=" + tacacs_dstn_ns +  " source_ip=" + str(tacacs_src_ip) + " \n"
             else:
                 auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
                     " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + " \n"
@@ -620,9 +644,11 @@ def aaa_util_reconfigure():
     update_ssh_config_file()
 
     get_source_interface(AAA_TACACS)
-    #get_source_interface(AAA_RADIUS)
-    vlog.info("##### tacacs_src_interface = %s, radius_src_interface = %s ########" \
-        % (str(tacacs_source_interface), str(radius_source_interface)))
+    get_source_interface(AAA_RADIUS)
+    vlog.info("##### tacacs_src_interface = %s, radius_src_interface = %s, " \
+        "tacacs_config_type = %s, radius_config_type = %s ########" \
+        % (str(tacacs_source_interface), str(radius_source_interface), \
+        str(tacacs_config_type), str(radius_config_type)))
 
     # TODO: For now we're calling the functionality to configure
     # TACACS+ PAM config files after all RADIUS config is done
@@ -680,7 +706,7 @@ def main():
     schema_helper.register_columns(SYSTEM_TABLE, ["cur_cfg"])
     schema_helper.register_columns(SYSTEM_TABLE, ["other_config"])
     schema_helper.register_columns(SYSTEM_TABLE, ["mgmt_intf_status"])
-    schema_helper.register_columns(PORT_TABLE, ["ip4_address", "name"])
+    schema_helper.register_columns(PORT_TABLE, ["ip4_address", "name", "ip4_address_secondary"])
     schema_helper.register_columns(VRF_TABLE, ["name", "ports", "table_id", "source_ip", "source_interface"])
 
     schema_helper.register_columns(
