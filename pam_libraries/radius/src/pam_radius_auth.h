@@ -41,6 +41,8 @@
 #define TIMEOUT        "timeout="
 #define BYPASS_ACCT    "bypass_acct"
 #define BYPASS_SESSION "bypass_session"
+#define DSTN_NAMESPACE "dstn_namespace="
+#define SOURCE_IP         "source_ip="
 
 #define RADIUS_DEFAULT_UDP_PORT 1812
 
@@ -74,6 +76,8 @@ typedef struct radius_conf_t {
 	int debug;
 	char prompt[MAXPROMPT];
 	int use_chap;
+	char dstn_namespace[32];
+	char source_ip[32];
 } radius_conf_t;
 
 

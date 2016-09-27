@@ -24,6 +24,7 @@ import ovs.vlog
 import os
 
 import vrf_utils
+import source_interface_utils
 
 # Assign my_auth to default local config
 my_auth = "passwd"
@@ -150,6 +151,144 @@ global_tacacs_auth = TACACS_PAP
 tacacs_source_interface = None
 radius_source_interface = None
 
+tacacs_config_type = None
+radius_config_type = None
+
+
+# testing (start)
+
+SYSTEM_TABLE = "System"
+PORT_TABLE = "Port"
+VRF_TABLE = "VRF"
+
+DEFAULT_VRF_NAME = "vrf_default"
+SWITCH_NAMESPACE = "swns"
+NAMESPACE_NAME_PREFIX = "VRF_"
+SOURCE_IP = 0
+SOURCE_INTERFACE = 1
+ALL_PROTOCOL = "all"
+
+def get_protocol_source(idl, protocol_type, vrf_name):
+    '''
+    get the source interface configured for the protocol
+    '''
+    source = None
+    config_type = None
+
+    source, config_type = get_configured_protocol_source(idl, protocol_type, vrf_name)
+
+    if source is None:
+        source, config_type = get_configured_protocol_source(idl, ALL_PROTOCOL, vrf_name)
+
+    return source, config_type
+
+def get_configured_protocol_source(idl, protocol_type, vrf_name):
+    '''
+    get the source interface configured for the protocol
+    '''
+    for ovs_rec in idl.tables[VRF_TABLE].rows.itervalues():
+
+        if ovs_rec.name == DEFAULT_VRF_NAME:
+
+            ip = ovs_rec.source_ip
+            for key, value in ovs_rec.source_ip.iteritems():
+                vlog.info("IP: key = %s, value = %s \n" %(str(key), str(value)))
+                if key == protocol_type:
+                    if len(value) != 0:
+                        return value, SOURCE_IP
+
+            source_interface = ovs_rec.source_interface
+            for key, value in ovs_rec.source_interface.iteritems():
+                if key == protocol_type:
+                    return value.name, SOURCE_INTERFACE
+
+    return None, None
+
+def  get_mgmt_ip(idl):
+    '''
+    get the ip address of management interface
+    '''
+    mgmt_ip = None
+
+    for ovs_rec in idl.tables[SYSTEM_TABLE].rows.itervalues():
+        if ovs_rec.mgmt_intf_status and ovs_rec.mgmt_intf_status is not None:
+            for key, value in ovs_rec.mgmt_intf_status.iteritems():
+                if key == "ip":
+                    mgmt_ip = value
+
+    return mgmt_ip
+
+def extract_ip(ip):
+    '''
+    extract the ip from [u'x.x.x.x/y'] format
+    '''
+    tmp = str(ip).split('\'')
+    tmp = tmp[1].split('/')
+    ip = tmp[0]
+
+    return ip
+
+def get_lowest_secondary_ip(ovs_rec):
+    '''
+    extract the lowest secondary ip
+    '''
+
+    secondary_ips = []
+    vlog.info("get lowest 2ndary ip")
+
+    for ip in ovs_rec.ip4_address_secondary:
+        vlog.info("2ndary ip is %s" % (str(ip)))
+        secondary_ips.append(ip)
+
+    for i in range(len(secondary_ips)):
+        secondary_ips[i] = "%3s.%3s.%3s.%3s" % tuple(secondary_ips[i].split("."))
+
+    secondary_ips.sort()
+
+    for i in range(len(secondary_ips)):
+        secondary_ips[i] = secondary_ips[i].replace(" ", "")
+
+
+    tmp = str(secondary_ips[0]).split('/')
+    return tmp[0]
+
+
+def get_ip_from_interface(idl, source_interface):
+    '''
+    get the ip address configured on the interface
+    '''
+    ip = None
+
+    for ovs_rec in idl.tables[PORT_TABLE].rows.itervalues():
+        if ovs_rec.name == source_interface:
+            ip = ovs_rec.ip4_address
+            if len(ip) == 0:
+                ip = get_lowest_secondary_ip(ovs_rec)
+            else:
+                ip = extract_ip(ip)
+
+    return ip
+
+def get_vrf_ns_from_name(idl, vrf_name):
+    '''
+    get the namespace corresponding to the VRF
+    get clarification from Krishna's team on this logic
+    '''
+
+    namespace = None
+
+    for ovs_rec in idl.tables[VRF_TABLE].rows.itervalues():
+         if ovs_rec.name == vrf_name:
+                table_id = ovs_rec.table_id
+                table_id = str(table_id).strip('[]')
+                if table_id == '0':
+                    namespace = SWITCH_NAMESPACE
+                else:
+                    namespace = NAMESPACE_NAME_PREFIX + str(table_id)
+
+    return namespace
+
+# testing (end)
 
 #---------------- unixctl_exit --------------------------
 
@@ -317,35 +456,45 @@ def  get_source_interface(protocol):
     Get tacacs/radius source interface configuration
     '''
     global radius_source_interface
+    global radius_config_type
+
     global tacacs_source_interface
+    global tacacs_config_type
 
     if protocol == AAA_RADIUS:
-        radius_source_interface = vrf_utils.get_source_interface(idl, protocol)
-        vlog.info("radius_source_interface = %s\n" % (radius_source_interface))
+        radius_source_interface, radius_config_type = \
+            get_protocol_source(idl, protocol, \
+                vrf_utils.DEFAULT_VRF_NAME)
+        vlog.info("radius_source_interface = %s, radius_source_interface = %s\n" \
+            % (radius_source_interface, radius_config_type))
 
     if protocol == AAA_TACACS:
-        tacacs_source_interface = vrf_utils.get_source_interface(idl, protocol)
-        vlog.info("tacacs_source_interface = %s\n" % (tacacs_source_interface))
+        tacacs_source_interface, tacacs_config_type = \
+            get_protocol_source(idl, protocol, \
+                vrf_utils.DEFAULT_VRF_NAME)
+        vlog.info("tacacs_source_interface = %s, tacacs_config_type = %s \n" \
+            % (tacacs_source_interface, tacacs_config_type))
 
-def get_src_ip_dstn_ns(source_interface):
+def get_src_ip_dstn_ns(source_interface, config_type):
     '''
     Get source ip and destination namespace from source interface
     '''
+    source_ip = None
     dstn_ns = None
 
     mgmt_ip = vrf_utils.get_mgmt_ip(idl)
     vlog.info("mgmt_ip = %s\n" % (mgmt_ip))
 
     if source_interface is None:
-        return source_interface, dstn_ns
+        return source_ip, dstn_ns
 
-    if source_interface != mgmt_ip:
-        vrf_name = vrf_utils.get_vrf_name_from_ip(idl, source_interface)
-        vlog.info("vrf_name = %s\n" % (vrf_name))
+    if config_type == source_interface_utils.SOURCE_INTERFACE:
+        source_ip = get_ip_from_interface(idl, source_interface)
 
-        dstn_ns = vrf_utils.get_namespace_from_vrf(idl, vrf_name)
+    if source_ip != mgmt_ip:
+        dstn_ns = get_vrf_ns_from_name(idl, vrf_utils.DEFAULT_VRF_NAME)
 
-    return source_interface, dstn_ns
+    return source_ip, dstn_ns
 
 #---------------------- update_ssh_config_file ---------------------
 def update_ssh_config_file():
@@ -484,11 +633,12 @@ def modify_common_auth_access_file(server_list):
     values set in the DB
     '''
     global tacacs_source_interface
+    global tacacs_config_type
     src_ip = None
     dstn_ns = None
 
     if tacacs_source_interface is not None:
-        src_ip, dstn_ns = get_src_ip_dstn_ns(tacacs_source_interface)
+        src_ip, dstn_ns = get_src_ip_dstn_ns(tacacs_source_interface, tacacs_config_type)
 
     vlog.info("##### tacacs_src_interface = %s, radius_src_interface = %s," \
         " src_ip = %s, dstn_ns = %s ########" \
@@ -621,8 +771,10 @@ def aaa_util_reconfigure():
 
     get_source_interface(AAA_TACACS)
     #get_source_interface(AAA_RADIUS)
-    vlog.info("##### tacacs_src_interface = %s, radius_src_interface = %s ########" \
-        % (str(tacacs_source_interface), str(radius_source_interface)))
+    vlog.info("##### tacacs_src_interface = %s, radius_src_interface = %s, " \
+        "tacacs_config_type = %s, radius_config_type = %s ########" \
+        % (str(tacacs_source_interface), str(radius_source_interface), \
+        str(tacacs_config_type), str(radius_config_type)))
 
     # TODO: For now we're calling the functionality to configure
     # TACACS+ PAM config files after all RADIUS config is done
@@ -680,7 +832,7 @@ def main():
     schema_helper.register_columns(SYSTEM_TABLE, ["cur_cfg"])
     schema_helper.register_columns(SYSTEM_TABLE, ["other_config"])
     schema_helper.register_columns(SYSTEM_TABLE, ["mgmt_intf_status"])
-    schema_helper.register_columns(PORT_TABLE, ["ip4_address", "name"])
+    schema_helper.register_columns(PORT_TABLE, ["ip4_address", "name", "ip4_address_secondary"])
     schema_helper.register_columns(VRF_TABLE, ["name", "ports", "table_id", "source_ip", "source_interface"])
 
     schema_helper.register_columns(
