@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # Copyright (C) 2015-2016 Hewlett Packard Enterprise Development LP
 # All Rights Reserved.
 #
@@ -25,6 +24,7 @@ import os
 
 import vrf_utils
 import source_interface_utils
+import ops_diagdump
 
 # Assign my_auth to default local config
 my_auth = "passwd"
@@ -676,6 +676,38 @@ def aaa_util_run():
     return
 
 
+# ------- ops_aaa_diagnostics_handler -------
+
+def ops_aaa_diagnostics_handler(argv):
+    # argv[0] is basic
+    # argv[1] is feature name
+    feature = argv.pop()
+    buff = 'Diagnostic dump response for feature ' + feature + '.\n'
+
+    # Capture the contents of commom-auth-access file
+    with open("/etc/pam.d/common-auth-access", "r") as log:
+        fbuff = ['commom-auth-access file\n']
+        fbuff += ['========================================================\n']
+        fbuff += log.readlines()
+
+    # Capture the contents of sshd-account-access file
+    with open("/etc/pam.d/sshd-account-access", "r") as log:
+        fbuff += ['sshd-account-access file\n']
+        fbuff += ['========================================================\n']
+        fbuff += log.readlines()
+
+    # Capture the contents of sshd-session-access file
+    with open("/etc/pam.d/sshd-session-access", "r") as log:
+        fbuff += ['sshd-session-access file\n']
+        fbuff += ['========================================================\n']
+        fbuff += log.readlines()
+
+    for x in fbuff:
+        buff += x
+
+    return buff
+
+
 #----------------- main() -------------------
 def main():
 
@@ -734,12 +766,16 @@ def main():
     idl = ovs.db.idl.Idl(remote, schema_helper)
 
     ovs.daemon.daemonize()
+    ovs.daemon.set_pidfile(None)
+    ovs.daemon._make_pidfile()
 
     ovs.unixctl.command_register("exit", "", 0, 0, unixctl_exit, None)
     error, unixctl_server = ovs.unixctl.server.UnixctlServer.create(None)
     if error:
         ovs.util.ovs_fatal(error, "could not create unixctl server", vlog)
 
+    # Diags callback init for AAA
+    ops_diagdump.init_diag_dump_basic(ops_aaa_diagnostics_handler)
     seqno = idl.change_seqno  # Sequence number when last processed the db
 
     while not exiting:
