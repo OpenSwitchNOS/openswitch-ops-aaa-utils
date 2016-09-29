@@ -23,8 +23,8 @@ import argparse
 import ovs.vlog
 import os
 
-import vrf_utils
-import source_interface_utils
+#import vrf_utils
+#import source_interface_utils
 
 # Assign my_auth to default local config
 my_auth = "passwd"
@@ -325,6 +325,9 @@ def  get_source_interface(protocol):
     global tacacs_source_ip
     global tacacs_source_interface
 
+    # TODO: remove this return, temporarily disabling src interface support for feature/radius -> master sync
+    return
+
     if protocol == AAA_RADIUS:
         radius_source_ip, radius_source_interface = \
             source_interface_utils.get_protocol_source(idl, protocol, \
@@ -341,6 +344,8 @@ def get_src_ip_dstn_ns(source_ip, source_interface):
     '''
     dstn_ns = None
 
+    # TODO: remove this return, temporarily disabling src interface support for feature/radius -> master sync
+    return
     mgmt_ip = vrf_utils.get_mgmt_ip(idl)
     vlog.info("mgmt_ip = %s\n" % (mgmt_ip))
 
