@@ -26,6 +26,8 @@ import os
 import vrf_utils
 import source_interface_utils
 import l3_utils
+from ops_eventlog import event_log_init
+from ops_eventlog import log_event
 
 # Assign my_auth to default local config
 my_auth = "passwd"
@@ -171,6 +173,7 @@ global_radius_auth = RADIUS_PAP
 global_radius_retries = RADIUS_SERVER_RETRIES_DEFAULT
 
 local_group = None
+authentication_group_list = "local"
 
 tacacs_source_interface = None
 radius_source_interface = None
@@ -312,6 +315,16 @@ def add_default_row():
     setattr(radius_row, AAA_SERVER_GROUP_NAME, AAA_RADIUS)
     setattr(radius_row, AAA_SERVER_GROUP_TYPE, AAA_RADIUS)
 
+    log_event("TACACS",
+              ["type", "Server Group"],
+              ["action", "add"],
+              ["event", "tacacs_plus (default)"])
+
+    log_event("RADIUS",
+              ["type", "Server Group"],
+              ["action", "add"],
+              ["event", "radius (default)"])
+
     # create default AAA_Server_Group_Prio table session
     default_row = txn.insert(idl.tables[AAA_SERVER_GROUP_PRIO_TABLE], new_uuid=None)
     setattr(default_row, AAA_SERVER_GROUP_PRIO_SESSION_TYPE, AAA_SERVER_GROUP_PRIO_SESSION_TYPE_DEFAULT)
@@ -449,18 +462,13 @@ def get_server_list(session_type):
 
     server_list = []
     global global_tacacs_passkey, global_tacacs_timeout, global_tacacs_auth
-    global_tacacs_passkey = TACACS_SERVER_PASSKEY_DEFAULT
-    global_tacacs_timeout = TACACS_SERVER_TIMEOUT_DEFAULT
-    global_tacacs_auth = TACACS_PAP
-
 
     global global_radius_passkey, global_radius_timeout, global_radius_auth, global_radius_retries
-    global_radius_passkey = RADIUS_SERVER_PASSKEY_DEFAULT
-    global_radius_timeout = RADIUS_SERVER_TIMEOUT_DEFAULT
-    global_radius_retries = RADIUS_SERVER_RETRIES_DEFAULT
-    global_radius_auth = RADIUS_PAP
 
-    global local_group
+    global local_group, authentication_group_list
+
+    group_list = ""
+
     if local_group is None:
         for group_rec in idl.tables[AAA_SERVER_GROUP_TABLE].rows.itervalues():
             if group_rec.group_name == AAA_LOCAL:
@@ -470,26 +478,85 @@ def get_server_list(session_type):
         if ovs_rec.aaa and ovs_rec.aaa is not None:
             for key, value in ovs_rec.aaa.iteritems():
                 if key == GBL_TACACS_SERVER_TIMEOUT:
-                    global_tacacs_timeout = value
+                    if (global_tacacs_timeout != value):
+                        type_str = "global default " + key
+                        event = global_tacacs_timeout + " => " + value
+                        log_event("TACACS",
+                                  ["type", type_str],
+                                  ["action", "update"],
+                                  ["event", event])
+                        global_tacacs_timeout = value
                 if key == GBL_TACACS_SERVER_AUTH_TYPE:
-                    global_tacacs_auth = value
+                    if (global_tacacs_auth != value):
+                        type_str = "global default " + key
+                        event = global_tacacs_auth + " => " + value
+                        log_event("TACACS",
+                                  ["type", type_str],
+                                  ["action", "update"],
+                                  ["event", event])
+                        global_tacacs_auth = value
                 if key == GBL_TACACS_SERVER_PASSKEY:
-                    global_tacacs_passkey = value
+                    if (global_tacacs_passkey != value):
+                        type_str = "global default " + key
+                        event = global_tacacs_passkey + " => " + value
+                        log_event("TACACS",
+                                  ["type", type_str],
+                                  ["action", "update"],
+                                  ["event", event])
+                        global_tacacs_passkey = value
                 if key == GBL_RADIUS_SERVER_TIMEOUT:
-                    global_radius_timeout = value
+                    if (global_radius_timeout != value):
+                        type_str = "global default " + key
+                        event = global_radius_timeout + " => " + value
+                        log_event("RADIUS",
+                                  ["type", type_str],
+                                  ["action", "update"],
+                                  ["event", event])
+                        global_radius_timeout = value
                 if key == GBL_RADIUS_SERVER_AUTH_TYPE:
-                    global_radius_auth = value
+                    if (global_radius_auth != value):
+                        type_str = "global default " + key
+                        event = global_radius_auth + " => " + value
+                        log_event("RADIUS",
+                                  ["type", type_str],
+                                  ["action", "update"],
+                                  ["event", event])
+                        global_radius_auth = value
                 if key == GBL_RADIUS_SERVER_PASSKEY:
-                    global_radius_passkey = value
+                    if (global_radius_passkey != value):
+                        type_str = "global default " + key
+                        event = global_radius_passkey + " => " + value
+                        log_event("RADIUS",
+                                  ["type", type_str],
+                                  ["action", "update"],
+                                  ["event", event])
+                        global_radius_passkey = value
                 if key == GBL_RADIUS_SERVER_RETRIES:
-                    global_radius_retries = value
+                    if (global_radius_retries != value):
+                        type_str = "global default " + key
+                        event = global_radius_retries + " => " + value
+                        log_event("RADIUS",
+                                  ["type", type_str],
+                                  ["action", "update"],
+                                  ["event", event])
+                        global_radius_retries = value
                 if key == AAA_FAIL_THROUGH:
                     global AAA_FAIL_THROUGH_ENABLED
+                    old = "disabled"
+                    new = "disabled"
 
                     if value == AAA_TRUE_FLAG:
-                        AAA_FAIL_THROUGH_ENABLED = True
+                        if AAA_FAIL_THROUGH_ENABLED == False:
+                            new = "enabled"
+                            AAA_FAIL_THROUGH_ENABLED = True
                     else:
-                        AAA_FAIL_THROUGH_ENABLED = False
+                        if AAA_FAIL_THROUGH_ENABLED == True:
+                            old = "enabled"
+                            AAA_FAIL_THROUGH_ENABLED = False
+                    if old != new:
+                        log_event("AAA_CONFIG",
+                                  ["type", "Fail-through"],
+                                  ["event", new])
 
     for ovs_rec in idl.tables[AAA_SERVER_GROUP_PRIO_TABLE].rows.itervalues():
         if ovs_rec.session_type != session_type:
@@ -503,6 +570,7 @@ def get_server_list(session_type):
                 if group is None:
                     continue
 
+                group_list = group_list + group.group_name + " "
                 vlog.info("AAA: group_name = %s, group_type = %s\n" % (group.group_name, group.group_type))
 
                 server_table = ""
@@ -532,6 +600,14 @@ def get_server_list(session_type):
 
                     for server_prio, server in sorted(group_server_dict.iteritems()):
                         server_list.append((server, group.group_type))
+
+    group_list = group_list.strip()
+    if group_list != authentication_group_list:
+        event = authentication_group_list + " => " + group_list
+        log_event("AAA_CONFIG",
+                  ["type", "Authentication server group priority list"],
+                  ["event", event])
+        authentication_group_list = group_list
 
     return server_list
 
@@ -596,6 +672,8 @@ def modify_common_auth_access_file(server_list):
 
     common_auth_access_filename = PAM_ETC_CONFIG_DIR + "common-auth-access"
 
+    pam_server_list_str = "server list -"
+
     with open(common_auth_access_filename, "w") as f:
 
         # Write the file header
@@ -611,6 +689,7 @@ def modify_common_auth_access_file(server_list):
             auth_line = ""
             if server_type == AAA_LOCAL:
                 auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_LOCAL_MODULE + " nullok\n"
+                pam_server_list_str = pam_server_list_str + " local"
             elif server_type == AAA_TACACS_PLUS:
                 ip_address = server.address
                 tcp_port = server.tcp_port[0]
@@ -634,6 +713,7 @@ def modify_common_auth_access_file(server_list):
                 else:
                     auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
                         ":" + str(tcp_port) + " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + "\n"
+                pam_server_list_str = pam_server_list_str + " " + ip_address
 
             elif server_type == AAA_RADIUS:
                 ip_address = server.address
@@ -655,6 +735,7 @@ def modify_common_auth_access_file(server_list):
                 else:
                     retries = server.retries[0]
                 auth_line = "auth\t" + PAM_CONTROL_VALUE + "\t" + PAM_RADIUS_MODULE + "\tdebug server=" + ip_address + ":" +  str(udp_port) + " secret=" + str(passkey) + " login=" + auth_type  + " retry=" + str(retries) + " timeout=" + str(timeout) + "\n"
+                pam_server_list_str = pam_server_list_str + " " + ip_address
 
             f.write(auth_line)
 
@@ -664,6 +745,7 @@ def modify_common_auth_access_file(server_list):
         auth_line = ""
         if server_type == AAA_LOCAL:
             auth_line = "auth\t[success=1 default=ignore]\t" + PAM_LOCAL_MODULE + " nullok\n"
+            pam_server_list_str = pam_server_list_str + " local"
         elif server_type == AAA_TACACS_PLUS:
             ip_address = server.address
             tcp_port = server.tcp_port[0]
@@ -687,6 +769,9 @@ def modify_common_auth_access_file(server_list):
             else:
                 auth_line = "auth\t[success=1 default=ignore]\t" + PAM_TACACS_MODULE + "\tdebug server=" + ip_address + \
                     " secret=" + str(passkey) + " login=" + auth_type + " timeout=" + str(timeout) + " \n"
+
+            pam_server_list_str = pam_server_list_str + " " + ip_address
+
         elif server_type == AAA_RADIUS:
             ip_address = server.address
             udp_port = server.udp_port[0]
@@ -707,12 +792,15 @@ def modify_common_auth_access_file(server_list):
             else:
                 retries = server.retries[0]
             auth_line = "auth\t[success=1 default=ignore]\t"  + PAM_RADIUS_MODULE + "\tdebug server=" + ip_address + ":" +  str(udp_port) + " secret=" + str(passkey) + " login=" + auth_type  + " retry=" + str(retries) + " timeout=" + str(timeout) + "\n"
-
+            pam_server_list_str = pam_server_list_str + " " + ip_address
 
         f.write(auth_line)
 
         # Write the file footer
         f.write(file_footer)
+    log_event("AAA_CONFIG",
+              ["type", "Authentication PAM configuration file"],
+              ["event", pam_server_list_str])
 
 #---------------- aaa_reconfigure() ----------------
 def aaa_util_reconfigure():
@@ -843,6 +931,9 @@ def main():
     error, unixctl_server = ovs.unixctl.server.UnixctlServer.create(None)
     if error:
         ovs.util.ovs_fatal(error, "could not create unixctl server", vlog)
+
+    # Event logging init for AAA
+    event_log_init("AAA")
 
     seqno = idl.change_seqno  # Sequence number when last processed the db
 
