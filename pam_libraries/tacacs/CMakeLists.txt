@@ -36,7 +36,7 @@ add_definitions(-DSYSCONFDIR="${CMAKE_INSTALL_SYSCONFDIR}")
 pkg_check_modules(OVSCOMMON REQUIRED libovscommon)
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall -Werror")
-
+STRING(REPLACE "-O2" "-O" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 include_directories(
   ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/pam_libraries/tacacs/
