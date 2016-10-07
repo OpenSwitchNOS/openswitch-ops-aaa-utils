@@ -105,7 +105,6 @@ configure_aaa_server_group_priority(aaa_server_group_prio_params_t *group_prio_p
     /* Start of transaction */
     START_DB_TXN(priority_txn);
 
-    /* TODO rework code when add login type support for : console, ssh and telnet*/
     group_prio_default = ovsrec_aaa_server_group_prio_first(idl);
 
     if (group_prio_default == NULL)
@@ -116,7 +115,6 @@ configure_aaa_server_group_priority(aaa_server_group_prio_params_t *group_prio_p
     /* Reset local group priority to 0 for no version of command */
     if (group_prio_params->no_form)
     {
-        key_list = xmalloc(sizeof(int64_t));
         if (group_prio_params->aaa_method == authentication)
         {
             group_row = get_row_by_server_group_name(SYSTEM_AAA_LOCAL);
@@ -130,7 +128,14 @@ configure_aaa_server_group_priority(aaa_server_group_prio_params_t *group_prio_p
         {
             ERRONEOUS_DB_TXN(priority_txn, "AAA server group does not exist.");
         }
-        value_list = xmalloc(sizeof(*group_row));
+        key_list = malloc(sizeof(int64_t));
+        value_list = malloc(sizeof(*group_row));
+        if (!key_list || !value_list)
+        {
+            if (key_list) free(key_list);
+            if (value_list) free(value_list);
+            ERRONEOUS_DB_TXN(priority_txn, "Malloc failed.");
+        }
         key_list[0] = priority;
         value_list[0] = (struct ovsrec_aaa_server_group *)group_row;
         group_count = 1;
@@ -139,14 +144,43 @@ configure_aaa_server_group_priority(aaa_server_group_prio_params_t *group_prio_p
     else
     {
         priority = 1;
-        key_list = xmalloc(sizeof(int64_t) * group_count);
-        value_list = xmalloc(sizeof(*group_row) * group_count);
+        key_list = malloc(sizeof(int64_t) * group_count);
+        value_list = malloc(sizeof(*group_row) * group_count);
+        if (!key_list || !value_list)
+        {
+            if (key_list) free(key_list);
+            if (value_list) free(value_list);
+            ERRONEOUS_DB_TXN(priority_txn, "Malloc failed.");
+        }
         for (iter = 0; iter < group_count; iter++)
         {
             group_row = get_row_by_server_group_name(group_prio_params->group_list[iter]);
+
             if (group_row == NULL)
             {
+                free(key_list);
+                free(value_list);
                 ERRONEOUS_DB_TXN(priority_txn, "AAA server group does not exist.");
+            }
+
+            // RADIUS and Local AAA groups are not allowed with AAA command authorization
+            if (group_prio_params->aaa_method == authorization && \
+                  (!strcmp(group_row->group_type,SYSTEM_AAA_RADIUS) || !strcmp(group_row->group_type,SYSTEM_AAA_LOCAL)))
+            {
+                free(key_list);
+                free(value_list);
+                ERRONEOUS_DB_TXN(priority_txn, "Incorrect command authorization configuration, \
+                    please use only 'none' or tacacs_plus AAA server groups");
+            }
+
+            // None group is not allowed to be configured with AAA authentication
+            if (group_prio_params->aaa_method == authentication && \
+                  strcmp(group_row->group_type,SYSTEM_AAA_NONE))
+            {
+                free(key_list);
+                free(value_list);
+                ERRONEOUS_DB_TXN(priority_txn, "Incorrect command authorization configuration, \
+                    please use only 'none' or tacacs_plus AAA server groups");
             }
 
             key_list[iter] = priority;
@@ -183,13 +217,14 @@ DEFUN(cli_aaa_set_authentication,
       AAA_DEFAULT_AUTHEN_LINE_HELP_STR
       AAA_LOCAL_AUTHENTICATION_HELP_STR
       GROUP_HELP_STR
-      GROUP_NAME_HELP_STR)
+      GROUP_NAME_AUTH_HELP_STR)
 
 {
     char **group_list = NULL;
     int group_count = 0;
     int keyword_skip = 0;
     aaa_server_group_prio_params_t group_prio_params;
+    int rv = 0;
 
     /*
      * because of current args implementation,
@@ -214,7 +249,12 @@ DEFUN(cli_aaa_set_authentication,
         {
            group_count = 1;
         }
-        group_list = xmalloc(sizeof(char *) * group_count);
+        group_list = malloc(sizeof(char *) * group_count);
+        if (!group_list)
+        {
+            VLOG_ERR("Malloc failed.");
+            return CMD_ERR_NOTHING_TODO;
+        }
         memcpy(group_list, argv + keyword_skip, sizeof(char *) * group_count);
     }
 
@@ -229,7 +269,9 @@ DEFUN(cli_aaa_set_authentication,
         group_prio_params.no_form = true;
     }
 
-    return configure_aaa_server_group_priority(&group_prio_params);
+    rv = configure_aaa_server_group_priority(&group_prio_params);
+    free(group_list);
+    return rv;
 }
 
 DEFUN_NO_FORM(cli_aaa_set_authentication,
@@ -453,12 +495,14 @@ DEFUN(cli_aaa_set_authorization,
       AAA_DEFAULT_AUTHOR_LINE_HELP_STR
       AAA_NONE_AUTHOR_HELP_STR
       GROUP_HELP_STR
-      GROUP_NAME_HELP_STR)
+      GROUP_NAME_AUTHOR_HELP_STR)
 
 {
     char **group_list = NULL;
     int group_count = 0;
     int grp_keyword_index = 1;
+    int rv = 0;
+
     aaa_server_group_prio_params_t group_prio_params;
     memset(&group_prio_params, 0, sizeof(group_prio_params));
 
@@ -492,7 +536,7 @@ DEFUN(cli_aaa_set_authorization,
             // This is the case when user has issued 'aaa author commands default none'
             group_count = 1;
             group_list = malloc(sizeof(char *));
-            if (group_list == NULL)
+            if (!group_list)
             {
                 VLOG_ERR("Malloc failed.");
                 return CMD_ERR_NOTHING_TODO;
@@ -504,7 +548,7 @@ DEFUN(cli_aaa_set_authorization,
             // This is the case when user has issued 'aaa author commands default group g1 g2 none'
             group_count = argc - grp_keyword_index;/* we need only the group count without group keyword */
             group_list = malloc(sizeof(char *) * group_count);
-            if (group_list == NULL)
+            if (!group_list)
             {
                 VLOG_ERR("Malloc failed.");
                 return CMD_ERR_NOTHING_TODO;
@@ -521,7 +565,9 @@ DEFUN(cli_aaa_set_authorization,
     group_prio_params.aaa_method = authorization;
     group_prio_params.login_type = AAA_SERVER_GROUP_PRIO_SESSION_TYPE_DEFAULT;
 
-    return configure_aaa_server_group_priority(&group_prio_params);
+    rv = configure_aaa_server_group_priority(&group_prio_params);
+    free(group_list);
+    return rv;
 }
 
 DEFUN_NO_FORM(cli_aaa_set_authorization,
@@ -554,6 +600,11 @@ show_privilege_level()
     else
     {
         groups = (gid_t *) malloc(MAX_GROUPS_USED * sizeof(gid_t));
+        if (!groups)
+        {
+            VLOG_ERR("Malloc failed.");
+            return CMD_ERR_NOTHING_TODO;
+        }
         result = getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups);
         if (result < 0)
         {
@@ -933,7 +984,11 @@ configure_aaa_server_group(aaa_server_group_params_t *server_group_params)
             const char* group_name = row->group_type;
             default_group = get_row_by_server_group_name(group_name);
 
-            group_list = xmalloc(sizeof(*default_group) * GROUP_COUNT_FOR_EACH_SERVER);
+            group_list = malloc(sizeof(*default_group) * GROUP_COUNT_FOR_EACH_SERVER);
+            if (!group_list)
+            {
+                ERRONEOUS_DB_TXN(server_group_txn, "Malloc failed.");
+            }
             VLOG_DBG("Moving servers from server group %s to default", row->group_name);
 
             if (!strcmp(server_group_params->group_type, SYSTEM_AAA_TACACS_PLUS))
@@ -979,9 +1034,15 @@ configure_aaa_server_group(aaa_server_group_params_t *server_group_params)
                 int iter = 0;
                 int skip = 0;
                 int list_count = group_prio_list->n_authentication_group_prios;
-                int64_t *key_list = xmalloc(sizeof(int64_t) * list_count);
+                int64_t *key_list = malloc(sizeof(int64_t) * list_count);
                 struct ovsrec_aaa_server_group **value_list =
-                                      xmalloc(sizeof(*row) * list_count);
+                                      malloc(sizeof(*row) * list_count);
+                if (!key_list || !(*value_list))
+                {
+                    if (key_list) free(key_list);
+                    if (*value_list) free(*value_list);
+                    ERRONEOUS_DB_TXN(server_group_txn, "Malloc failed.");
+                }
                 for (iter = 0; iter < list_count; iter++)
                 {
                    if (row == group_prio_list->value_authentication_group_prios[iter])
@@ -1106,6 +1167,7 @@ configure_aaa_server_group_add_server(aaa_server_group_params_t *server_group_pa
     const struct ovsrec_aaa_server_group *group_row = NULL;
     struct ovsdb_idl_txn* status_txn = NULL;
     int64_t group_prio = RADIUS_SERVER_GROUP_PRIORITY_DEFAULT;
+    struct ovsrec_aaa_server_group **group_list = NULL;
 
     START_DB_TXN(status_txn);
 
@@ -1120,12 +1182,15 @@ configure_aaa_server_group_add_server(aaa_server_group_params_t *server_group_pa
     if (strcmp(group_row->group_type, SYSTEM_AAA_RADIUS) == 0)
     {
         const struct ovsrec_radius_server *server_row = NULL;
-        struct ovsrec_aaa_server_group **group_list = NULL;
         const struct ovsrec_aaa_server_group *default_group = NULL;
         const char *radius_group = SYSTEM_AAA_RADIUS;
         default_group = get_row_by_server_group_name(radius_group);
 
-        group_list = xmalloc(sizeof(*default_group) * GROUP_COUNT_FOR_EACH_SERVER);
+        group_list = malloc(sizeof(*default_group) * GROUP_COUNT_FOR_EACH_SERVER);
+        if (!group_list)
+        {
+            ERRONEOUS_DB_TXN(status_txn, "Malloc failed.");
+        }
 
         /* No port mentioned while adding command */
         if (port == -1)
@@ -1178,18 +1243,19 @@ configure_aaa_server_group_add_server(aaa_server_group_params_t *server_group_pa
                 ovsrec_radius_server_set_group(server_row, group_list, GROUP_COUNT_FOR_EACH_SERVER);
             }
         }
-
-        free(group_list);
     }
     else if (strcmp(group_row->group_type, SYSTEM_AAA_TACACS_PLUS) == 0)
     {
-        struct ovsrec_aaa_server_group **group_list = NULL;
         const struct ovsrec_tacacs_server *server_row = NULL;
         const struct ovsrec_aaa_server_group *default_group = NULL;
         const char *tacacs_group = SYSTEM_AAA_TACACS_PLUS;
         default_group = get_row_by_server_group_name(tacacs_group);
 
-        group_list = xmalloc(sizeof(*default_group) * GROUP_COUNT_FOR_EACH_SERVER);
+        group_list = malloc(sizeof(*default_group) * GROUP_COUNT_FOR_EACH_SERVER);
+        if (!group_list)
+        {
+            ERRONEOUS_DB_TXN(status_txn, "Malloc failed.");
+        }
 
         /* No port mentioned while adding command */
         if (port == -1)
@@ -1242,6 +1308,8 @@ configure_aaa_server_group_add_server(aaa_server_group_params_t *server_group_pa
             }
         }
     }
+
+    free(group_list);
     /* End of transaction. */
     END_DB_TXN(status_txn);
 }
@@ -1354,7 +1422,7 @@ set_global_passkey(const char *passkey, const bool is_tacacs_server)
     /* validate the length of passkey */
     if (strlen(passkey) > MAX_LENGTH_PASSKEY)
     {
-        vty_out(vty, "Length of passkey should be less than 32%s", VTY_NEWLINE);
+        vty_out(vty, "Length of passkey should be less than %d%s", MAX_LENGTH_PASSKEY, VTY_NEWLINE);
         return CMD_ERR_NOTHING_TODO;
     }
 
@@ -1581,7 +1649,12 @@ tacacs_server_add_parameters(const struct ovsrec_tacacs_server *row,
                              const struct ovsrec_aaa_server_group *group)
 {
     struct ovsrec_aaa_server_group **group_list = NULL;
-    group_list = xmalloc(sizeof(*group) * GROUP_COUNT_FOR_EACH_SERVER);
+    group_list = malloc(sizeof(*group) * GROUP_COUNT_FOR_EACH_SERVER);
+    if (!group_list)
+    {
+        VLOG_ERR("Malloc failed.");
+        return;
+    }
     group_list[0] = (struct ovsrec_aaa_server_group *) group;
 
     int64_t group_prio = TACACS_SERVER_GROUP_PRIORITY_DEFAULT;
@@ -1616,8 +1689,8 @@ tacacs_server_add_parameters(const struct ovsrec_tacacs_server *row,
 
     ovsrec_tacacs_server_set_default_group_priority(row, server_params->priority);
     ovsrec_tacacs_server_set_user_group_priority(row, &group_prio, 1);
-
     ovsrec_tacacs_server_set_group(row, group_list, GROUP_COUNT_FOR_EACH_SERVER - 1);
+    free(group_list);
 }
 
 /* Add or remove a TACACS+ server */
@@ -1691,7 +1764,7 @@ configure_tacacs_server_host(server_params_t *server_params)
                 tacacs_server_add_parameters(row, server_params, default_group);
 
                 /* Update System table */
-                tacacs_info = xmalloc(sizeof *ovs->tacacs_servers * (ovs->n_tacacs_servers + 1));
+                tacacs_info = malloc(sizeof *ovs->tacacs_servers * (ovs->n_tacacs_servers + 1));
                 for (iter = 0; iter < ovs->n_tacacs_servers; iter++) {
                     tacacs_info[iter] = ovs->tacacs_servers[iter];
                 }
@@ -1713,7 +1786,11 @@ configure_tacacs_server_host(server_params_t *server_params)
             ovsrec_tacacs_server_delete(row);
 
             /* Update System table */
-            tacacs_info = xmalloc(sizeof *ovs->tacacs_servers * ovs->n_tacacs_servers);
+            tacacs_info = malloc(sizeof *ovs->tacacs_servers * ovs->n_tacacs_servers);
+            if (!tacacs_info)
+            {
+                ERRONEOUS_DB_TXN(status_txn, "Malloc failed.");
+            }
             for (iter = 0; iter < ovs->n_tacacs_servers; iter++) {
                 if (ovs->tacacs_servers[iter] != row) {
                     tacacs_info[count++] = ovs->tacacs_servers[iter];
@@ -2333,7 +2410,7 @@ radius_server_add_parameters(const struct ovsrec_radius_server *row,
                              const struct ovsrec_aaa_server_group *group)
 {
     struct ovsrec_aaa_server_group **group_list = NULL;
-    group_list = xmalloc(sizeof(*group) * GROUP_COUNT_FOR_EACH_SERVER);
+    group_list = malloc(sizeof(*group) * GROUP_COUNT_FOR_EACH_SERVER);
     group_list[0] = (struct ovsrec_aaa_server_group *) group;
     int64_t group_prio = RADIUS_SERVER_GROUP_PRIORITY_DEFAULT;
 
@@ -2449,7 +2526,7 @@ configure_radius_server_host(server_params_t *server_params)
                 radius_server_add_parameters(row, server_params, default_group);
 
                 /* Update System table */
-                radius_info = xmalloc(sizeof *ovs->radius_servers * (ovs->n_radius_servers + 1));
+                radius_info = malloc(sizeof *ovs->radius_servers * (ovs->n_radius_servers + 1));
                 for (iter = 0; iter < ovs->n_radius_servers; iter++) {
                     radius_info[iter] = ovs->radius_servers[iter];
                 }
@@ -2471,7 +2548,7 @@ configure_radius_server_host(server_params_t *server_params)
             ovsrec_radius_server_delete(row);
 
             /* Update System table */
-            radius_info = xmalloc(sizeof *ovs->radius_servers * ovs->n_radius_servers);
+            radius_info = malloc(sizeof *ovs->radius_servers * ovs->n_radius_servers);
             for (iter = 0; iter < ovs->n_radius_servers; iter++) {
                 if (ovs->radius_servers[iter] != row) {
                     radius_info[count++] = ovs->radius_servers[iter];
