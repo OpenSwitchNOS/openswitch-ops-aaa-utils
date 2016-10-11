@@ -13,7 +13,6 @@
 #    under the License.
 
 from time import sleep
-from pytest import mark
 
 TOPOLOGY = """
 # +--------+         +--------+
@@ -44,7 +43,8 @@ ops1:eth0 -- hs1:eth0
 ops1:eth1 -- hs2:eth0
 """
 
-NETOP_PTIV_LVL = "14"
+USER1 = "user1"
+USER1_PASSWD = "user1"
 
 def tacacs_add_server(dut, step):
     step('\n### === Adding tacacs server === ###')
@@ -52,10 +52,9 @@ def tacacs_add_server(dut, step):
     matches = ['#']
     cmd = "su netop"
     assert vtysh_shell.send_command(cmd, matches) is 0
-    # dut("su netop", shell='bash')
     dut("configure terminal")
-    dut("tacacs-server host 192.168.1.254")
-    dut("tacacs-server host 192.168.1.253")
+    dut("tacacs-server host 192.168.1.254 key tac_test")
+    dut("tacacs-server host 192.168.1.253 key tac_test")
     dut("end")
     dump = dut("show running-config")
     lines = dump.splitlines()
@@ -73,7 +72,7 @@ def tacacs_add_server(dut, step):
 
 
 def tacacs_create_server_group(dut, step):
-    step('\n### === Create tacacs_plus group tac1, tac2 and add server === ###')
+    step('\n### === Create tacacs+ group tac1, tac2 and add server === ###')
     dut("configure terminal")
     dut("aaa group server tacacs_plus tac1")
     dut("server 192.168.1.254")
@@ -96,10 +95,10 @@ def tacacs_create_server_group(dut, step):
         if "server 192.168.1.253" in line:
             count = count + 1
     assert count == 4,\
-            '\n### Create tacacs_plus group tac1,tac2 and add server test failed ###'
+            '\n### Create tacacs+ group tac1,tac2 and add server test failed ###'
 
-    step('\n### Create tacacs_plus group tac1,tac2 and add server test passed ###')
-    step('\n### === Create tacacs_plus group tac1,tac2 and add server test end === ###\n')
+    step('\n### Create tacacs+ group tac1,tac2 and add server test passed ###')
+    step('\n### === Create tacacs+ group tac1,tac2 and add server test end === ###\n')
 
 
 def set_aaa_authorization_none(dut, step):
@@ -118,7 +117,7 @@ def set_aaa_authorization_none(dut, step):
     assert count == 1,\
             '\n### set aaa authorization to none test failed ###'
 
-    step('\n### set aaa authorization to none test passed ###')
+    step('\n### Test 1 : set aaa authorization to none test passed ###')
     step('\n### === set aaa authorization to none test end === ###\n')
 
 
@@ -138,14 +137,15 @@ def set_aaa_authorization_groups_chk_authorization(dut, step):
     assert count == 1,\
             '\n### set aaa authorization with groups and test authorization test failed ###'
 
-    step('\n### set aaa authorization with groups and test authorization test passed ###')
+    dut("end")
+
+    step('\n### Test 2: set aaa authorization with groups and test authorization test passed ###')
     step('\n### === set aaa authorization with groups and test authorization test end === ###\n')
 
-
-def unset_aaa_authentication_groups(dut, step):
-    step('\n### === unset aaa authorization test start === ###')
+def set_aaa_authentication(dut, step):
+    step('\n### === set aaa authentication with groups test start === ###')
     dut("configure terminal")
-    dut("no aaa authorization commands default")
+    dut("aaa authentication login default group tac2 local")
     dut("end")
 
     count = 0
@@ -153,16 +153,60 @@ def unset_aaa_authentication_groups(dut, step):
     dump = dut("show running-config")
     lines = dump.splitlines()
     for line in lines:
-        if ("aaa authorization commands default" in line):
+        if ("aaa authentication login default group tac2 local" in line):
             count = count + 1
-    assert count == 0,\
-            '\n### unset aaa authorization test failed ###'
+    assert count == 1,\
+            '\n### set aaa authentication with groups test failed ###'
+    step('\n### set aaa authentication with groups test passed ###')
 
-    step('\n### unset aaa authorization  test passed ###')
-    step('\n### === unset aaa authorization test end === ###\n')
+def set_unreachable_servers_tacacs_group(dut, step):
+    step('\n### set unreachable server and test aaa cmd authorization test start ###')
+    dut("configure terminal")
+    dut("tacacs-server host 1.1.1.1")
+    dut("aaa group server tacacs_plus tac3")
+    dut("server 1.1.1.1")
+    dut("exit")
+    dut("aaa authorization commands default group tac3")
+    dut("end")
+
+    count = 0
+    ''' now check the running config '''
+    dump = dut("show running-config")
+    lines = dump.splitlines()
+    for line in lines:
+        if ("Cannot execute command. Could not connect to any TACACS+ servers." in line):
+            count = count + 1
+    assert count == 1,\
+           '\n ### Failed to verify unreachable tacacs server test ###\n'
+
+    step('\n### Test4: set unreachable server and test aaa cmd authorization  test passed ###')
+    step('\n### === set unreachable server and test aaa cmd authorization  test end === ###\n')
 
 
-@mark.skipif(True, reason="Disabling as AAA feature revamp in progress")
+def login_as_deny_authorization_user(step, hs1, user, pwd):
+    step("### ssh from host as the unauthorized user ###")
+
+    ssh_cmd = "ssh -F /dev/null -o StrictHostKeyChecking=no " + user + \
+        "@192.168.1.1"
+    matches = ['password:']
+    bash_shell = hs1.get_shell('bash')
+    assert bash_shell.send_command(ssh_cmd, matches) is 0
+    matches = ['#']
+    assert bash_shell.send_command(pwd, matches) is 0, "ssh" \
+        " as new user failed."
+    cmd = "show run"
+    matches = ['Cannot execute command. Command not allowed.']
+    assert bash_shell.send_command(cmd, matches) is 0, "### Login as unauthorized user" \
+        " and test command authorization failed ###"
+    step('\n### Test3: ssh from host as unauthorized user test passed ###')
+    step('\n### === ssh from host as unauthorized user test passed === ###\n')
+
+def start_tacacs_service(step, host):
+    step("#### start tac_plus daemon for server ####")
+    out = host("service tac_plus start")
+    assert ("Starting Tacacs+ server") in out, "Failed to start tac_plus on the host" + host
+    step("### Started tacacs service on the tacacs server ###")
+
 def test_ct_tacacs_config(topology, step):
     ops1 = topology.get('ops1')
     hs1 = topology.get('hs1')
@@ -184,6 +228,17 @@ def test_ct_tacacs_config(topology, step):
 
     tacacs_create_server_group(ops1, step)
 
+    start_tacacs_service(step, hs1)
+    start_tacacs_service(step, hs2)
+
+    set_aaa_authentication(ops1, step)
+
     set_aaa_authorization_none(ops1, step)
 
     set_aaa_authorization_groups_chk_authorization(ops1, step)
+
+    login_as_deny_authorization_user(step, hs1, USER1, USER1_PASSWD)
+
+    set_unreachable_servers_tacacs_group(ops1, step)
+
+    step("\n\n### All the 4 tests for tacacs command authorization passed!!! ####\n")
