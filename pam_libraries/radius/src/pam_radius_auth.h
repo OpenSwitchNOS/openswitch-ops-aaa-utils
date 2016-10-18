@@ -33,6 +33,7 @@
 #define RADIUS                   "RADIUS"
 #define PRIV_LVL_ENV             "PRIV_LVL"
 #define AUTH_MODE_ENV            "AUTH_MODE"
+#define REMOTE_USR_ENV           "RUSER"
 
 #define DSTN_NAMESPACE_LEN        32
 #define SOURCE_IP_LEN             32
