@@ -32,6 +32,7 @@
 #define ENV_MAXLEN                32
 #define RADIUS                   "RADIUS"
 #define PRIV_LVL_ENV             "PRIV_LVL"
+#define HP_PRIV_LVL_ENV          "HP_PRIV_LVL"
 #define AUTH_MODE_ENV            "AUTH_MODE"
 #define REMOTE_USR_ENV           "RUSER"
 

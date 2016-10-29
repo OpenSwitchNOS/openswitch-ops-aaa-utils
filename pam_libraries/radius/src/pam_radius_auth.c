@@ -527,6 +527,57 @@ static int verify_packet(char *secret, AUTH_HDR *response, AUTH_HDR *request)
 }
 
 /*
+ * Find HP-Privilege-Level VSA attribute in Vendor Specific AVP.
+ */
+static int find_hp_priv_lvl_vsa(AUTH_HDR *response)
+{
+        int vendor_id = 0;
+        int len = ntohs(response->length) - AUTH_HDR_LEN;
+        attribute_t *attr = (attribute_t *) &response->data;
+        attribute_t *vsa = NULL;
+        HP_PRIV_VSA hp_priv_vsa;
+
+        /* while not end of packet */
+        while (len > 0) {
+            if (attr->attribute == PW_VENDOR_SPECIFIC) {
+	        vsa = attr;
+                /* Check if vsa contains HP-Privilege-level VSA attribute */
+                if (vsa->length >= MIN_HP_PRIV_LVL_LEN) {
+                    memcpy(&vendor_id, vsa->data, sizeof(int));
+                    vendor_id = ntohl(vendor_id);
+                    DPRINT(LOG_DEBUG, "Vendor ID = %d\n", vendor_id);
+
+                    if (vendor_id == HP_VENDOR_ID) {
+                        unsigned char *hp_vsa = vsa->data + sizeof(int);
+                        memcpy(&hp_priv_vsa.vendor_type,
+                               hp_vsa,
+                               sizeof(hp_priv_vsa.vendor_type));
+                        memcpy(&hp_priv_vsa.vendor_len,
+                               (hp_vsa + sizeof(hp_priv_vsa.vendor_type)),
+                               sizeof(hp_priv_vsa.vendor_len));
+                        memcpy(&hp_priv_vsa.hp_priv_lvl,
+                               (hp_vsa + sizeof(hp_priv_vsa.vendor_type) + sizeof(hp_priv_vsa.vendor_len)),
+                                sizeof(hp_priv_vsa.hp_priv_lvl));
+                        DPRINT(LOG_DEBUG, "Vendor type = %d\n", hp_priv_vsa.vendor_type);
+
+                        if ((hp_priv_vsa.vendor_type == HP_PRIV_LVL_VENDOR_TYPE) &&
+                            (hp_priv_vsa.vendor_len == HP_PRIV_LVL_VENDOR_LEN)) {
+                            hp_priv_vsa.hp_priv_lvl = ntohl(hp_priv_vsa.hp_priv_lvl);
+                            DPRINT(LOG_DEBUG, "HP Privilege = %d\n", hp_priv_vsa.hp_priv_lvl);
+                            return hp_priv_vsa.hp_priv_lvl;
+                        }
+                    }
+                }
+            }
+            if ((len -= attr->length) <= 0) {
+                return INVALID_HP_PRIV_LVL;
+            }
+            attr = (attribute_t *) ((char *) attr + attr->length);
+        }
+        return INVALID_HP_PRIV_LVL;
+}
+
+/*
  * Find an attribute in a RADIUS packet.	Note that the packet length
  * is *always* kept in network byte order.
  */
@@ -1133,13 +1184,17 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,int flags,int argc,CONST c
 	AUTH_HDR *request = (AUTH_HDR *) send_buffer;
 	AUTH_HDR *response = (AUTH_HDR *) recv_buffer;
 	radius_conf_t config;
+        int hp_priv_lvl = INVALID_HP_PRIV_LVL;
         char priv_lvl_env[ENV_MAXLEN];
         char auth_mode_env[ENV_MAXLEN];
         char remote_usr_env[MAXPWNAM + ENV_MAXLEN];
+        char hp_priv_lvl_env[ENV_MAXLEN];
 
         memset(priv_lvl_env, 0,  ENV_MAXLEN);
         memset(auth_mode_env, 0, ENV_MAXLEN);
         memset(remote_usr_env, 0,  MAXPWNAM + ENV_MAXLEN);
+        memset(hp_priv_lvl_env, 0, ENV_MAXLEN);
+
 	ctrl = _pam_parse(argc, argv, &config);
 
 	/* grab the user name */
@@ -1324,17 +1379,21 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,int flags,int argc,CONST c
 
 	/* Whew! Done the pasword checks, look for an authentication acknowledge */
 	if (response->code == PW_AUTHENTICATION_ACK) {
-                attribute_t *a_service_type;
+               attribute_t *a_service_type;
 
-                if ((a_service_type = find_attribute(response,
-                                      PW_USER_SERVICE_TYPE)) == NULL) {
-                    /*
-                     * Return authentication failure when service-type AVP is
-                     * not set as the privilege level of the user is unknown.
-                     */
-                    DPRINT(LOG_ERR, "Service type attribute was not set");
-                    retval = PAM_AUTH_ERR;
-                } else {
+               if ((hp_priv_lvl = find_hp_priv_lvl_vsa(response))
+                                != INVALID_HP_PRIV_LVL) {
+                   DPRINT(LOG_INFO, "HP-Privilege-Level = %d\n", hp_priv_lvl);
+                   snprintf(hp_priv_lvl_env, ENV_MAXLEN, "%s=%d",
+                            HP_PRIV_LVL_ENV, hp_priv_lvl);
+                   snprintf(auth_mode_env, ENV_MAXLEN, "%s=%s",
+                                     AUTH_MODE_ENV, RADIUS);
+                   snprintf(remote_usr_env, MAXPWNAM + ENV_MAXLEN , "%s=%s",
+                         REMOTE_USR_ENV, user);
+                   retval = PAM_SUCCESS;
+               } else if ((a_service_type = find_attribute(response,
+                                      PW_USER_SERVICE_TYPE)) != NULL) {
+                    /* Check if Service-Type attribute is set */
                     int priv_lvl = -1;
                     memcpy(&priv_lvl, a_service_type->data, sizeof(int));
                     priv_lvl = ntohl(priv_lvl);
@@ -1356,6 +1415,14 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh,int flags,int argc,CONST c
                        default:
                             retval = PAM_AUTH_ERR;
                     }
+                } else {
+                    /*
+                     * Return authentication failure when niether
+                     * HP-Privilege-level VSA is set nor service-type AVP is
+                     * set as the privilege level of the user is unknown.
+                     */
+                    DPRINT(LOG_ERR, "Niether VSA/Service type attribute was set");
+                    retval = PAM_AUTH_ERR;
                 }
 	} else {
 		retval = PAM_AUTH_ERR;	/* authentication failure */
@@ -1389,13 +1456,18 @@ error:
                        __FUNCTION__);
                 return PAM_SERVICE_ERR;
             }
-            if ((pam_putenv(pamh, priv_lvl_env)) != PAM_SUCCESS) {
-                _pam_log(LOG_ERR, "%s: error setting PRIV_LVL PAM ENV",
-                       __FUNCTION__);
-                return PAM_SERVICE_ERR;
+            if (hp_priv_lvl == INVALID_HP_PRIV_LVL) {
+                if (pam_putenv(pamh, priv_lvl_env) != PAM_SUCCESS) {
+                    _pam_log(LOG_ERR, "%s: error setting PRIV_LVL PAM ENV",
+                              __FUNCTION__);
+                    return PAM_SERVICE_ERR;
+                }
             } else {
-                _pam_log(LOG_INFO, "PRIV_LVL set to %s",
-                         pam_getenv(pamh, PRIV_LVL_ENV));
+                if (pam_putenv(pamh, hp_priv_lvl_env) != PAM_SUCCESS) {
+                    _pam_log(LOG_ERR, "%s: error setting HP_PRIV_LVL PAM ENV",
+                             __FUNCTION__);
+                    return PAM_SERVICE_ERR;
+                }
             }
             if ((pam_putenv(pamh, auth_mode_env)) != PAM_SUCCESS) {
                 _pam_log(LOG_ERR, "%s: error setting AUTH_MODE PAM ENV",

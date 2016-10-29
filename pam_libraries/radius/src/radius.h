@@ -43,6 +43,19 @@ typedef struct pw_auth_hdr {
 	uint8_t		data[2];
 } AUTH_HDR;
 
+typedef struct hp_priv_vsa {
+        uint8_t        vendor_type;
+        uint8_t        vendor_len;
+        int            hp_priv_lvl;
+} HP_PRIV_VSA;
+
+#define INVALID_HP_PRIV_LVL             -1
+#define MIN_HP_PRIV_LVL_LEN             12
+#define HP_VENDOR_ID                    11
+
+#define HP_PRIV_LVL_VENDOR_TYPE         1
+#define HP_PRIV_LVL_VENDOR_LEN          6
+
 #define AUTH_HDR_LEN			20
 #define CHAP_VALUE_LENGTH		16
 
