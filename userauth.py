@@ -77,8 +77,10 @@ def _user_exists(username):
     try:
         return pwd.getpwnam(username) is not None
     except KeyError:
-        return False
-
+        try:
+            return pwd.getpwnam("remote_user") is not None
+        except KeyError:
+            return False
 
 # =============================================
 # Example usage of handle_user_login
